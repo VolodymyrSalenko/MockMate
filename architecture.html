@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MockMate — Architecture</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0b1120;
+    --surface:  #111827;
+    --card:     #1e293b;
+    --border:   #334155;
+    --em:       #10b981;
+    --em2:      #34d399;
+    --blue:     #3b82f6;
+    --purple:   #a855f7;
+    --amber:    #f59e0b;
+    --red:      #ef4444;
+    --slate:    #64748b;
+    --text:     #e2e8f0;
+    --muted:    #94a3b8;
+    --dim:      #475569;
+  }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 40px 24px 60px;
+  }
+
+  /* ── Header ── */
+  .header {
+    text-align: center;
+    margin-bottom: 56px;
+  }
+  .logo {
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    color: #fff;
+  }
+  .logo span { color: var(--em); }
+  .subtitle {
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: 0.95rem;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  /* ── Section labels ── */
+  .section-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-bottom: 18px;
+  }
+  .section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* ── Layout wrapper ── */
+  .diagram { max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 48px; }
+
+  /* ════════════════════════════════
+     SECTION 1 — SYSTEM LAYERS
+  ════════════════════════════════ */
+  .layers {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr auto 1fr;
+    gap: 0;
+    align-items: stretch;
+  }
+  .layer-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 8px;
+    padding-top: 38px; /* align with card body, not header */
+  }
+  .layer-arrow svg { color: var(--dim); flex-shrink: 0; }
+
+  .layer-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+  .layer-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .layer-header .icon {
+    width: 34px; height: 34px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+  .layer-header .title { font-weight: 700; font-size: 0.9rem; color: #fff; }
+  .layer-header .sub   { font-size: 0.72rem; color: var(--muted); margin-top: 1px; }
+  .layer-body { padding: 14px 18px; display: flex; flex-direction: column; gap: 8px; }
+
+  .tech-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .tech-pill .dot {
+    width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+  }
+
+  /* ════════════════════════════════
+     SECTION 2 — USER FLOW STEPS
+  ════════════════════════════════ */
+  .steps-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0;
+  }
+  .step {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 10px;
+    position: relative;
+  }
+  .step-connector {
+    flex: 0 0 40px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 20px;
+  }
+  .step-connector svg { color: var(--dim); }
+
+  .step-bubble {
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px;
+    border: 2px solid transparent;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .step-num {
+    position: absolute;
+    top: -4px; right: -4px;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: var(--bg);
+    border: 1.5px solid var(--border);
+    font-size: 0.6rem;
+    font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--muted);
+  }
+  .step-name  { font-size: 0.78rem; font-weight: 700; color: var(--text); line-height: 1.2; }
+  .step-desc  { font-size: 0.68rem; color: var(--muted); line-height: 1.4; }
+
+  /* ════════════════════════════════
+     SECTION 3 — INTERVIEW LOOP
+  ════════════════════════════════ */
+  .loop-wrapper {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 28px 32px;
+    position: relative;
+  }
+  .loop-svg {
+    width: 100%;
+    overflow: visible;
+  }
+
+  /* ════════════════════════════════
+     SECTION 4 — FEATURES ROW
+  ════════════════════════════════ */
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+  .feat-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    text-align: center;
+  }
+  .feat-card .icon { font-size: 26px; }
+  .feat-card .name { font-size: 0.78rem; font-weight: 700; color: var(--text); }
+  .feat-card .desc { font-size: 0.68rem; color: var(--muted); line-height: 1.4; }
+
+  /* colour helpers */
+  .c-em     { color: var(--em); }
+  .c-blue   { color: var(--blue); }
+  .c-purple { color: var(--purple); }
+  .c-amber  { color: var(--amber); }
+  .c-red    { color: var(--red); }
+
+  .bg-em     { background: rgba(16,185,129,.12); border-color: rgba(16,185,129,.3); }
+  .bg-blue   { background: rgba(59,130,246,.12); border-color: rgba(59,130,246,.3); }
+  .bg-purple { background: rgba(168,85,247,.12); border-color: rgba(168,85,247,.3); }
+  .bg-amber  { background: rgba(245,158,11,.12); border-color: rgba(245,158,11,.3); }
+  .bg-red    { background: rgba(239,68,68,.12);  border-color: rgba(239,68,68,.3); }
+  .bg-slate  { background: rgba(100,116,139,.12); border-color: rgba(100,116,139,.3); }
+
+  .border-em     { border-color: rgba(16,185,129,.4); }
+  .border-blue   { border-color: rgba(59,130,246,.4); }
+  .border-purple { border-color: rgba(168,85,247,.4); }
+  .border-amber  { border-color: rgba(245,158,11,.4); }
+</style>
+</head>
+<body>
+
+<!-- ══════════ HEADER ══════════ -->
+<div class="header">
+  <div class="logo">Mock<span>Mate</span></div>
+  <div class="subtitle">Architecture &amp; Flow</div>
+</div>
+
+<div class="diagram">
+
+  <!-- ══════════ SECTION 1 — SYSTEM LAYERS ══════════ -->
+  <div>
+    <div class="section-label">System Layers</div>
+    <div class="layers">
+
+      <!-- Browser -->
+      <div class="layer-card border-em">
+        <div class="layer-header">
+          <div class="icon bg-em" style="border:1px solid rgba(16,185,129,.3)">🌐</div>
+          <div>
+            <div class="title">Browser</div>
+            <div class="sub">Client — React App</div>
+          </div>
+        </div>
+        <div class="layer-body">
+          <span class="tech-pill"><span class="dot" style="background:#61dafb"></span>React 18</span>
+          <span class="tech-pill"><span class="dot" style="background:#646cff"></span>Vite</span>
+          <span class="tech-pill"><span class="dot" style="background:#06b6d4"></span>Tailwind CSS</span>
+          <span class="tech-pill"><span class="dot" style="background:#10b981"></span>Web Speech API</span>
+          <span class="tech-pill"><span class="dot" style="background:#f59e0b"></span>SpeechSynthesis</span>
+          <span class="tech-pill"><span class="dot" style="background:#a855f7"></span>Recharts</span>
+        </div>
+      </div>
+
+      <!-- arrow →  -->
+      <div class="layer-arrow">
+        <svg width="28" height="20" viewBox="0 0 28 20" fill="none">
+          <path d="M0 10h22M16 3l9 7-9 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+
+      <!-- Backend -->
+      <div class="layer-card border-blue">
+        <div class="layer-header">
+          <div class="icon bg-blue" style="border:1px solid rgba(59,130,246,.3)">⚡</div>
+          <div>
+            <div class="title">Backend</div>
+            <div class="sub">Server — Python API</div>
+          </div>
+        </div>
+        <div class="layer-body">
+          <span class="tech-pill"><span class="dot" style="background:#3b82f6"></span>FastAPI</span>
+          <span class="tech-pill"><span class="dot" style="background:#ffd43b"></span>Python 3.11</span>
+          <span class="tech-pill"><span class="dot" style="background:#64748b"></span>pdfplumber</span>
+          <span class="tech-pill"><span class="dot" style="background:#64748b"></span>python-docx</span>
+          <span class="tech-pill c-muted" style="font-size:0.7rem;padding:4px 8px;background:transparent;border:none;color:var(--dim)">
+            /parse-jd · /respond · /debrief · /extract-cv
+          </span>
+        </div>
+      </div>
+
+      <!-- arrow → -->
+      <div class="layer-arrow">
+        <svg width="28" height="20" viewBox="0 0 28 20" fill="none">
+          <path d="M0 10h22M16 3l9 7-9 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+
+      <!-- AI -->
+      <div class="layer-card border-purple">
+        <div class="layer-header">
+          <div class="icon bg-purple" style="border:1px solid rgba(168,85,247,.3)">🤖</div>
+          <div>
+            <div class="title">AI Layer</div>
+            <div class="sub">LLM via OpenRouter</div>
+          </div>
+        </div>
+        <div class="layer-body">
+          <span class="tech-pill"><span class="dot" style="background:#a855f7"></span>OpenRouter API</span>
+          <span class="tech-pill"><span class="dot" style="background:#cc785c"></span>Claude Haiku 4.5</span>
+          <span class="tech-pill" style="font-size:0.7rem;gap:4px">
+            <span style="background:#22c55e;width:7px;height:7px;border-radius:50%"></span>~$0.001 / interview
+          </span>
+          <span class="tech-pill" style="font-size:0.7rem;gap:4px">
+            <span style="background:#64748b;width:7px;height:7px;border-radius:50%"></span>max 6 msg history
+          </span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══════════ SECTION 2 — USER FLOW ══════════ -->
+  <div>
+    <div class="section-label">User Journey</div>
+    <div class="steps-row">
+
+      <!-- Step 1 -->
+      <div class="step">
+        <div class="step-bubble bg-em border-em" style="border:2px solid rgba(16,185,129,.5)">
+          📋
+          <span class="step-num">1</span>
+        </div>
+        <div class="step-name">Paste JD</div>
+        <div class="step-desc">Job description<br/>+ optional CV upload</div>
+      </div>
+
+      <div class="step-connector">
+        <svg width="22" height="16" viewBox="0 0 22 16" fill="none">
+          <path d="M0 8h16M10 2l8 6-8 6" stroke="#334155" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="step">
+        <div class="step-bubble bg-blue" style="border:2px solid rgba(59,130,246,.5)">
+          ⚙️
+          <span class="step-num">2</span>
+        </div>
+        <div class="step-name">AI Parses</div>
+        <div class="step-desc">Generates 5<br/>tailored questions</div>
+      </div>
+
+      <div class="step-connector">
+        <svg width="22" height="16" viewBox="0 0 22 16" fill="none">
+          <path d="M0 8h16M10 2l8 6-8 6" stroke="#334155" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="step">
+        <div class="step-bubble bg-purple" style="border:2px solid rgba(168,85,247,.5)">
+          🗣️
+          <span class="step-num">3</span>
+        </div>
+        <div class="step-name">Alex Speaks</div>
+        <div class="step-desc">TTS voices<br/>the question aloud</div>
+      </div>
+
+      <div class="step-connector">
+        <svg width="22" height="16" viewBox="0 0 22 16" fill="none">
+          <path d="M0 8h16M10 2l8 6-8 6" stroke="#334155" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+
+      <!-- Step 4 -->
+      <div class="step">
+        <div class="step-bubble bg-red" style="border:2px solid rgba(239,68,68,.5)">
+          🎤
+          <span class="step-num">4</span>
+        </div>
+        <div class="step-name">User Answers</div>
+        <div class="step-desc">Push-to-talk<br/>STT transcribes</div>
+      </div>
+
+      <div class="step-connector">
+        <svg width="22" height="16" viewBox="0 0 22 16" fill="none">
+          <path d="M0 8h16M10 2l8 6-8 6" stroke="#334155" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+
+      <!-- Step 5 -->
+      <div class="step">
+        <div class="step-bubble bg-amber" style="border:2px solid rgba(245,158,11,.5)">
+          🧠
+          <span class="step-num">5</span>
+        </div>
+        <div class="step-name">AI Responds</div>
+        <div class="step-desc">Ack + next Q<br/>or follow-up</div>
+      </div>
+
+      <div class="step-connector">
+        <svg width="22" height="16" viewBox="0 0 22 16" fill="none">
+          <path d="M0 8h16M10 2l8 6-8 6" stroke="#334155" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+
+      <!-- Step 6 -->
+      <div class="step">
+        <div class="step-bubble bg-em" style="border:2px solid rgba(16,185,129,.5)">
+          📊
+          <span class="step-num">6</span>
+        </div>
+        <div class="step-name">Debrief</div>
+        <div class="step-desc">Scores · tips<br/>PDF export</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══════════ SECTION 3 — INTERVIEW LOOP ══════════ -->
+  <div>
+    <div class="section-label">Interview Loop Logic</div>
+    <div class="loop-wrapper">
+      <svg class="loop-svg" viewBox="0 0 820 220" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arr" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#475569"/>
+          </marker>
+          <marker id="arr-em" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#10b981"/>
+          </marker>
+          <marker id="arr-red" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#ef4444"/>
+          </marker>
+          <marker id="arr-amber" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#f59e0b"/>
+          </marker>
+        </defs>
+
+        <!-- ── Nodes (rounded rect + icon + label) ── -->
+        <!-- Node helper: each is ~110w × 70h -->
+
+        <!-- 1. User / JD -->
+        <rect x="10" y="75" width="108" height="68" rx="12" fill="#1e293b" stroke="rgba(16,185,129,.4)" stroke-width="1.5"/>
+        <text x="64" y="103" text-anchor="middle" font-size="22">📋</text>
+        <text x="64" y="123" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">JD + CV</text>
+        <text x="64" y="136" text-anchor="middle" fill="#64748b" font-size="9.5">User Input</text>
+
+        <!-- arrow → -->
+        <line x1="118" y1="109" x2="148" y2="109" stroke="#475569" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- 2. Parse JD -->
+        <rect x="150" y="75" width="108" height="68" rx="12" fill="#1e293b" stroke="rgba(59,130,246,.4)" stroke-width="1.5"/>
+        <text x="204" y="103" text-anchor="middle" font-size="22">⚙️</text>
+        <text x="204" y="123" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">Parse JD</text>
+        <text x="204" y="136" text-anchor="middle" fill="#64748b" font-size="9.5">/parse-jd</text>
+
+        <!-- arrow → -->
+        <line x1="258" y1="109" x2="288" y2="109" stroke="#475569" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- 3. Alex Speaks (TTS) -->
+        <rect x="290" y="75" width="108" height="68" rx="12" fill="#1e293b" stroke="rgba(168,85,247,.4)" stroke-width="1.5"/>
+        <text x="344" y="103" text-anchor="middle" font-size="22">🗣️</text>
+        <text x="344" y="123" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">Alex Speaks</text>
+        <text x="344" y="136" text-anchor="middle" fill="#64748b" font-size="9.5">SpeechSynthesis</text>
+
+        <!-- arrow → -->
+        <line x1="398" y1="109" x2="428" y2="109" stroke="#475569" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- 4. User Answers -->
+        <rect x="430" y="75" width="108" height="68" rx="12" fill="#1e293b" stroke="rgba(239,68,68,.4)" stroke-width="1.5"/>
+        <text x="484" y="103" text-anchor="middle" font-size="22">🎤</text>
+        <text x="484" y="123" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">User Answers</text>
+        <text x="484" y="136" text-anchor="middle" fill="#64748b" font-size="9.5">Web Speech API</text>
+
+        <!-- arrow → -->
+        <line x1="538" y1="109" x2="568" y2="109" stroke="#475569" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- 5. AI Responds -->
+        <rect x="570" y="75" width="108" height="68" rx="12" fill="#1e293b" stroke="rgba(245,158,11,.4)" stroke-width="1.5"/>
+        <text x="624" y="103" text-anchor="middle" font-size="22">🧠</text>
+        <text x="624" y="123" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">AI Responds</text>
+        <text x="624" y="136" text-anchor="middle" fill="#64748b" font-size="9.5">/respond</text>
+
+        <!-- diamond decision: last Q? -->
+        <polygon points="735,88  770,109  735,130  700,109" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+        <text x="735" y="106" text-anchor="middle" fill="#94a3b8" font-size="9" font-weight="600">Last</text>
+        <text x="735" y="118" text-anchor="middle" fill="#94a3b8" font-size="9" font-weight="600">Q?</text>
+
+        <!-- arrow AI → decision -->
+        <line x1="678" y1="109" x2="699" y2="109" stroke="#475569" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- No → loop back (curved arrow above) -->
+        <!-- "No" label -->
+        <text x="735" y="76" text-anchor="middle" fill="#64748b" font-size="9">No</text>
+        <!-- curved line: from decision top, arc over to Alex Speaks top -->
+        <path d="M735 88 C735 30, 344 30, 344 75" fill="none" stroke="#334155" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arr)"/>
+
+        <!-- Yes → Debrief -->
+        <text x="785" y="106" fill="#10b981" font-size="9" font-weight="600">Yes</text>
+        <line x1="770" y1="109" x2="806" y2="109" stroke="#10b981" stroke-width="1.5" marker-end="url(#arr-em)"/>
+
+        <!-- Debrief node (right edge, vertically centered) -->
+        <rect x="807" y="75" width="8" height="68" rx="4" fill="rgba(16,185,129,.6)"/>
+
+        <!-- Debrief label below right -->
+        <text x="811" y="157" text-anchor="middle" fill="#10b981" font-size="9.5" font-weight="700">📊 Debrief</text>
+
+        <!-- Coach Feedback arrow (down from User Answers) -->
+        <line x1="484" y1="143" x2="484" y2="175" stroke="#f59e0b" stroke-width="1.2" stroke-dasharray="4,2" marker-end="url(#arr-amber)"/>
+        <rect x="415" y="176" width="138" height="34" rx="8" fill="#1e293b" stroke="rgba(245,158,11,.3)" stroke-width="1"/>
+        <text x="484" y="190" text-anchor="middle" fill="#f59e0b" font-size="10" font-weight="600">⚡ Live Coach Hints</text>
+        <text x="484" y="202" text-anchor="middle" fill="#64748b" font-size="8.5">WPM · fillers · STAR · duration</text>
+
+      </svg>
+    </div>
+  </div>
+
+  <!-- ══════════ SECTION 4 — FEATURES ══════════ -->
+  <div>
+    <div class="section-label">Key Features</div>
+    <div class="features-grid">
+
+      <div class="feat-card border-em bg-em" style="border:1px solid rgba(16,185,129,.3)">
+        <div class="icon">🎯</div>
+        <div class="name">Personalised Questions</div>
+        <div class="desc">CV + JD → 5 custom questions (2 behavioural, 2 technical, 1 motivation)</div>
+      </div>
+
+      <div class="feat-card" style="border:1px solid rgba(59,130,246,.3); background:rgba(59,130,246,.06)">
+        <div class="icon">🗣️</div>
+        <div class="name">Voice Interview</div>
+        <div class="desc">Push-to-talk mic + browser TTS. Works 100% free — no paid APIs</div>
+      </div>
+
+      <div class="feat-card" style="border:1px solid rgba(245,158,11,.3); background:rgba(245,158,11,.06)">
+        <div class="icon">⚡</div>
+        <div class="name">Live Coach</div>
+        <div class="desc">Instant WPM, filler words, STAR detection after each answer</div>
+      </div>
+
+      <div class="feat-card" style="border:1px solid rgba(168,85,247,.3); background:rgba(168,85,247,.06)">
+        <div class="icon">📊</div>
+        <div class="name">Scored Debrief</div>
+        <div class="desc">Per-answer scores, charts, speech overview &amp; PDF export</div>
+      </div>
+
+      <div class="feat-card" style="border:1px solid rgba(16,185,129,.3); background:rgba(16,185,129,.06)">
+        <div class="icon">📁</div>
+        <div class="name">CV Upload</div>
+        <div class="desc">PDF, DOCX, or TXT — parsed server-side for question personalisation</div>
+      </div>
+
+      <div class="feat-card" style="border:1px solid rgba(239,68,68,.3); background:rgba(239,68,68,.06)">
+        <div class="icon">🎚️</div>
+        <div class="name">Difficulty Levels</div>
+        <div class="desc">Junior · Mid · Senior — adjusts question depth &amp; follow-up pressure</div>
+      </div>
+
+      <div class="feat-card" style="border:1px solid rgba(100,116,139,.3); background:rgba(100,116,139,.06)">
+        <div class="icon">🕐</div>
+        <div class="name">Answer Timer</div>
+        <div class="desc">90-second countdown ring with colour warning when time runs low</div>
+      </div>
+
+      <div class="feat-card" style="border:1px solid rgba(245,158,11,.3); background:rgba(245,158,11,.06)">
+        <div class="icon">📜</div>
+        <div class="name">Session History</div>
+        <div class="desc">Past sessions saved locally — score trends visible on landing page</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══════════ SECTION 5 — COST / INFRA ══════════ -->
+  <div>
+    <div class="section-label">Cost &amp; Deployment</div>
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px">
+
+      <div style="background:var(--card); border:1px solid rgba(16,185,129,.3); border-radius:14px; padding:18px 16px; display:flex; flex-direction:column; align-items:center; gap:6px; text-align:center;">
+        <div style="font-size:28px">💸</div>
+        <div style="font-weight:700; font-size:0.85rem">~$0.001 / session</div>
+        <div style="font-size:0.72rem; color:var(--muted)">Claude Haiku only<br/>STT + TTS = free browser APIs</div>
+      </div>
+
+      <div style="background:var(--card); border:1px solid rgba(59,130,246,.3); border-radius:14px; padding:18px 16px; display:flex; flex-direction:column; align-items:center; gap:6px; text-align:center;">
+        <div style="font-size:28px">🚀</div>
+        <div style="font-weight:700; font-size:0.85rem">Deploy Free</div>
+        <div style="font-size:0.72rem; color:var(--muted)">Backend → Render<br/>Frontend → Vercel</div>
+      </div>
+
+      <div style="background:var(--card); border:1px solid rgba(168,85,247,.3); border-radius:14px; padding:18px 16px; display:flex; flex-direction:column; align-items:center; gap:6px; text-align:center;">
+        <div style="font-size:28px">🔒</div>
+        <div style="font-weight:700; font-size:0.85rem">No Auth / No DB</div>
+        <div style="font-size:0.72rem; color:var(--muted)">Stateless — history<br/>lives in localStorage</div>
+      </div>
+
+    </div>
+  </div>
+
+</div><!-- /diagram -->
+
+</body>
+</html>
