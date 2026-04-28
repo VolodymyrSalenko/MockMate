@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTTS } from '../hooks/useTTS'
 import { useSTT } from '../hooks/useSTT'
 
@@ -65,27 +65,30 @@ export default function RetryModal({ question, originalScore, role, onClose }) {
   const countdownIntervalRef = useRef(null)
 
   const { speak } = useTTS()
+
+  const handleFinalTranscript = useCallback(async (text) => {
+    if (!text.trim()) return
+    setTranscript(text)
+    setPhase('thinking')
+    try {
+      const res = await fetch(`${BACKEND_URL}/debrief`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ qa_pairs: [{ question, answer: text }], role }),
+      })
+      if (!res.ok) throw new Error('Debrief failed')
+      const data = await res.json()
+      setResult(data.answers?.[0] || null)
+      setPhase('result')
+    } catch {
+      setError('Could not evaluate your answer. Please try again.')
+      setPhase('idle')
+      canRecordRef.current = true
+    }
+  }, [question, role])
+
   const { start, stop, isListening, interimTranscript } = useSTT({
-    onFinalTranscript: async (text) => {
-      if (!text.trim()) return
-      setTranscript(text)
-      setPhase('thinking')
-      try {
-        const res = await fetch(`${BACKEND_URL}/debrief`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ qa_pairs: [{ question, answer: text }], role }),
-        })
-        if (!res.ok) throw new Error('Debrief failed')
-        const data = await res.json()
-        setResult(data.answers?.[0] || null)
-        setPhase('result')
-      } catch {
-        setError('Could not evaluate your answer. Please try again.')
-        setPhase('idle')
-        canRecordRef.current = true
-      }
-    },
+    onFinalTranscript: handleFinalTranscript,
   })
 
   // Speak the question on mount

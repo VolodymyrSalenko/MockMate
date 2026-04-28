@@ -1,45 +1,99 @@
 import { useCallback, useRef } from 'react'
 
+function pickVoice(voices) {
+  const en = voices.filter((v) => v.lang === 'en-US' || v.lang === 'en_US')
+  return (
+    en.find((v) => /Natural/i.test(v.name)) ||
+    en.find((v) => /Online/i.test(v.name)) ||
+    en.find((v) => /Google/i.test(v.name)) ||
+    en.find((v) => /Aria|Jenny|Guy|Zira|David/i.test(v.name)) ||
+    en[0] ||
+    voices[0]
+  )
+}
+
+function toSentences(text) {
+  const chunks = text.split(/(?<=[.!?])\s+/)
+  return chunks.map((s) => s.trim()).filter(Boolean)
+}
+
 export function useTTS() {
-  const utteranceRef = useRef(null)
+  const keepAliveRef = useRef(null)
+  const genRef       = useRef(0)
 
   const speak = useCallback((text, onEnd) => {
+    // Increment generation BEFORE cancel so any onend fired by cancel()
+    // sees the new generation and exits immediately.
+    genRef.current += 1
+    const myGen = genRef.current
+
     window.speechSynthesis.cancel()
+    clearInterval(keepAliveRef.current)
 
     const trySpeak = (attemptsLeft) => {
-      const voices = window.speechSynthesis.getVoices()
+      if (genRef.current !== myGen) return
 
+      const voices = window.speechSynthesis.getVoices()
       if (voices.length === 0 && attemptsLeft > 0) {
         setTimeout(() => trySpeak(attemptsLeft - 1), 200)
         return
       }
 
-      const preferred =
-        voices.find((v) => v.lang === 'en-US' && v.name.includes('Google')) ||
-        voices.find((v) => v.lang === 'en-US') ||
-        voices[0]
+      const voice     = pickVoice(voices)
+      const sentences = toSentences(text)
+      let idx         = 0
 
-      const utterance = new SpeechSynthesisUtterance(text)
-      if (preferred) utterance.voice = preferred
-      utterance.rate = 0.95
-      utterance.pitch = 1.0
-      utterance.volume = 1.0
-      utterance.onend = () => {
-        if (onEnd) onEnd()
-      }
-      utterance.onerror = (e) => {
-        // Ignore interrupted errors (caused by cancel())
-        if (e.error !== 'interrupted' && onEnd) onEnd()
+      const speakNext = () => {
+        // Bail if a newer speak() or cancel() has taken over
+        if (genRef.current !== myGen) return
+
+        if (idx >= sentences.length) {
+          if (onEnd) onEnd()
+          return
+        }
+
+        const utterance = new SpeechSynthesisUtterance(sentences[idx++])
+        if (voice) utterance.voice = voice
+        utterance.rate   = 0.90
+        utterance.pitch  = 1.0
+        utterance.volume = 1.0
+
+        // Per-utterance flag so Chrome's occasional double-onend is also harmless
+        let fired = false
+        utterance.onend = () => {
+          if (fired || genRef.current !== myGen) return
+          fired = true
+          setTimeout(speakNext, 120)
+        }
+        utterance.onerror = (e) => {
+          if (e.error === 'interrupted') return
+          if (!fired && genRef.current === myGen) {
+            fired = true
+            if (onEnd) onEnd()
+          }
+        }
+
+        clearInterval(keepAliveRef.current)
+        window.speechSynthesis.speak(utterance)
+
+        keepAliveRef.current = setInterval(() => {
+          if (!window.speechSynthesis.speaking) {
+            clearInterval(keepAliveRef.current)
+            return
+          }
+          window.speechSynthesis.resume()
+        }, 10000)
       }
 
-      utteranceRef.current = utterance
-      window.speechSynthesis.speak(utterance)
+      speakNext()
     }
 
     trySpeak(10)
   }, [])
 
   const cancel = useCallback(() => {
+    genRef.current += 1
+    clearInterval(keepAliveRef.current)
     window.speechSynthesis.cancel()
   }, [])
 

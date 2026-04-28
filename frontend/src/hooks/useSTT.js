@@ -4,7 +4,8 @@ export function useSTT({ onFinalTranscript }) {
   const recognitionRef = useRef(null)
   const [interimTranscript, setInterimTranscript] = useState('')
   const [isListening, setIsListening] = useState(false)
-  const finalRef = useRef('')
+  const finalRef        = useRef('')
+  const lastInterimRef  = useRef('')
 
   const isSupported =
     typeof window !== 'undefined' &&
@@ -21,6 +22,7 @@ export function useSTT({ onFinalTranscript }) {
     recognition.continuous = true
     recognitionRef.current = recognition
     finalRef.current = ''
+    lastInterimRef.current = ''
 
     recognition.onstart = () => setIsListening(true)
 
@@ -36,16 +38,21 @@ export function useSTT({ onFinalTranscript }) {
         }
       }
       if (final) finalRef.current += final
-      setInterimTranscript(interim || finalRef.current)
+      const display = interim || finalRef.current
+      lastInterimRef.current = display
+      setInterimTranscript(display)
     }
 
     recognition.onend = () => {
       setIsListening(false)
       setInterimTranscript('')
-      if (finalRef.current.trim() && onFinalTranscript) {
-        onFinalTranscript(finalRef.current.trim())
+      // Fall back to last interim if the engine never produced a final result
+      const result = finalRef.current.trim() || lastInterimRef.current.trim()
+      if (result && onFinalTranscript) {
+        onFinalTranscript(result)
       }
       finalRef.current = ''
+      lastInterimRef.current = ''
     }
 
     recognition.onerror = (e) => {

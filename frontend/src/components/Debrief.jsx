@@ -330,10 +330,11 @@ export default function Debrief({ qaPairs, role, difficulty, duration, onRetry }
     if (!debriefRef.current) return
     setExporting(true)
     try {
-      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([import('html2canvas'), import('jspdf')])
+      const [{ default: html2canvas }, jsPDFModule] = await Promise.all([import('html2canvas'), import('jspdf')])
+      const JsPDF = jsPDFModule.jsPDF || jsPDFModule.default
       const canvas = await html2canvas(debriefRef.current, { backgroundColor: '#020617', scale: 2, useCORS: true, logging: false })
       const imgData = canvas.toDataURL('image/png')
-      const pdf = new jsPDF('p', 'mm', 'a4')
+      const pdf = new JsPDF({ orientation: 'p', unit: 'mm', format: 'a4' })
       const pageW = pdf.internal.pageSize.getWidth(), pageH = pdf.internal.pageSize.getHeight()
       const imgH  = (canvas.height * pageW) / canvas.width
       let heightLeft = imgH, pos = 0
@@ -351,17 +352,16 @@ export default function Debrief({ qaPairs, role, difficulty, duration, onRetry }
     try {
       const { default: html2canvas } = await import('html2canvas')
       const canvas = await html2canvas(shareCardRef.current, { backgroundColor: '#020617', scale: 2, useCORS: true, logging: false })
-      canvas.toBlob(async (blob) => {
-        const file = new File([blob], 'mockmate-score.png', { type: 'image/png' })
-        if (navigator.canShare?.({ files: [file] })) {
-          try { await navigator.share({ files: [file], title: 'My MockMate Score', text: `I scored ${parseFloat(debrief.overall_score).toFixed(1)}/10 on my MockMate interview!` }) }
-          catch { /* user cancelled */ }
-        } else {
-          const url = URL.createObjectURL(blob)
-          const a = document.createElement('a'); a.href = url; a.download = 'mockmate-score.png'; a.click()
-          setTimeout(() => URL.revokeObjectURL(url), 1000)
-        }
-      })
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'))
+      const file = new File([blob], 'mockmate-score.png', { type: 'image/png' })
+      if (navigator.canShare?.({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: 'My MockMate Score', text: `I scored ${parseFloat(debrief.overall_score).toFixed(1)}/10 on my MockMate interview!` }) }
+        catch { /* user cancelled */ }
+      } else {
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a'); a.href = url; a.download = 'mockmate-score.png'; a.click()
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
+      }
     } catch (e) { console.error('Share failed:', e) }
     finally { setSharing(false) }
   }

@@ -258,7 +258,6 @@ export default function Interview({ sessionData, onComplete }) {
       ...(hints.length ? [{ role: 'coach', hints, analytics, questionIndex: idx }] : []),
     ])
     const newHistory = [...history, { role: 'user', content: transcript }]
-    setHistory(newHistory)
     setStatus('thinking')
 
     try {
@@ -344,10 +343,16 @@ export default function Interview({ sessionData, onComplete }) {
 
   useEffect(() => {
     const onKeyDown = (e) => {
-      if (e.code === 'Space' && !isHoldingRef.current && canRecordRef.current && status === 'idle') {
-        const tag = document.activeElement.tagName
-        if (tag === 'TEXTAREA' || tag === 'INPUT') return
-        e.preventDefault()
+      if (e.code !== 'Space' || e.repeat) return
+      const tag = document.activeElement.tagName
+      if (tag === 'TEXTAREA' || tag === 'INPUT') return
+      e.preventDefault()
+
+      if (status === 'listening') {
+        // Press Space to stop — works whether started by keyboard or mic button
+        isHoldingRef.current = false
+        stop()
+      } else if (canRecordRef.current && status === 'idle') {
         isHoldingRef.current = true
         recordingStartRef.current = Date.now()
         setStatus('listening')
@@ -355,8 +360,10 @@ export default function Interview({ sessionData, onComplete }) {
       }
     }
     const onKeyUp = (e) => {
-      if (e.code === 'Space' && isHoldingRef.current) {
-        e.preventDefault()
+      if (e.code !== 'Space') return
+      e.preventDefault()
+      // PTT release: stop if we started via keyboard hold
+      if (isHoldingRef.current) {
         isHoldingRef.current = false
         stop()
       }
@@ -577,10 +584,10 @@ export default function Interview({ sessionData, onComplete }) {
               <p className={`text-xs font-semibold tracking-wide transition-colors duration-300 text-center ${
                 isListening ? 'text-red-400' : isSpeaking ? 'text-slate-600' : isThinking ? 'text-yellow-400' : 'text-slate-500'
               }`}>
-                {isListening  ? `Listening… ${countdown}s — release to send` :
+                {isListening  ? `Listening… ${countdown}s — press Space to send` :
                  isSpeaking   ? 'Alex is speaking...' :
                  isThinking   ? 'Processing your answer...' :
-                 'Hold to Answer · or hold Spacebar'}
+                 'Hold mic · or Space to start / stop'}
               </p>
             </div>
           </div>
