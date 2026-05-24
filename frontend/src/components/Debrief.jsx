@@ -285,6 +285,7 @@ function ShareCard({ score, role, difficulty, strength, date, cardRef }) {
   )
 }
 
+export default function Debrief({ qaPairs, role, difficulty, duration, recording, onRetry }) {
 function BodyLanguageCard({ metrics }) {
   if (!metrics || metrics.samplesCount < 30) return null
 
@@ -492,6 +493,13 @@ export default function Debrief({ qaPairs, role, difficulty, duration, faceMetri
           <div className="glass border border-slate-700/40 rounded-3xl p-6 space-y-4 animate-fade-up">
             <div>
               <p className="text-white font-bold text-lg">🎥 Interview Recording</p>
+              <p className="text-slate-500 text-sm mt-1">
+                Review your webcam recording from this interview session.
+              </p>
+            </div>
+
+            {/* The recording is stored as a temporary browser object URL.
+                It is available during the current session and can be downloaded by the user. */}
               <p className="text-slate-500 text-sm mt-1">Review your webcam recording from this interview session.</p>
             </div>
             <video
@@ -499,6 +507,7 @@ export default function Debrief({ qaPairs, role, difficulty, duration, faceMetri
               controls
               className="w-full rounded-2xl border border-slate-700/50 bg-black"
             />
+
             <a
               href={recording}
               download={`MockMate-recording-${new Date().toISOString().slice(0,10)}.webm`}

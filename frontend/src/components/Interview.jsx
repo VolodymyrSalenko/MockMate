@@ -4,6 +4,7 @@ import { useSTT } from '../hooks/useSTT'
 import { useFaceAnalysis } from '../hooks/useFaceAnalysis'
 import { useMediaRecorder } from '../hooks/useMediaRecorder'
 import { analyzeAnswer, getHints, wpmColor, durationLabel } from '../utils/speechAnalytics'
+import { useMediaRecorder } from '../hooks/useMediaRecorder'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
 
@@ -274,12 +275,25 @@ export default function Interview({ sessionData, onComplete }) {
 
   const toggleWebcam = async () => {
     if (webcamStream) {
+
+      // Stop recording before turning off the camera stream.
       stopRecording()
       webcamStream.getTracks().forEach(t => t.stop())
       setWebcamStream(null)
       setWebcamError('')
     } else {
       try {
+        // We request both camera and microphone because the interview recording
+        // should include the user's video and spoken answers.
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: true,
+        })
+        setWebcamStream(stream)
+        setWebcamError('')
+
+        // Start recording as soon as the webcam stream is available.
+        // This keeps the first MVP simple: one recording per interview session.
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
         setWebcamStream(stream)
         setWebcamError('')
@@ -291,6 +305,17 @@ export default function Interview({ sessionData, onComplete }) {
   }
 
   const { speak, isSupported: ttsSupported } = useTTS()
+
+  // MediaRecorder hook handles webcam interview recording.
+  // It creates a replayable video file after the interview ends.
+  const {
+    recordingUrl,
+    isRecording,
+    recordingError,
+    startRecording,
+    stopRecording,
+    clearRecording,
+  } = useMediaRecorder()
 
   const handleFinalTranscript = useCallback(async (transcript) => {
     if (!transcript.trim()) return
@@ -345,6 +370,17 @@ export default function Interview({ sessionData, onComplete }) {
       canRecordRef.current = false
       speak(reply, () => {
         if (done) {
+          const totalDuration = Math.round(
+            (Date.now() - sessionStartRef.current) / 1000
+          )
+          // Stop interview recording before navigating to debrief.
+          // MediaRecorder needs a short moment to finalize the video blob.
+
+          stopRecording()
+
+          setTimeout(() => {
+            onComplete(updatedPairs, totalDuration, recordingUrl)
+          }, 800)
           const totalDuration = Math.round((Date.now() - sessionStartRef.current) / 1000)
           stopRecording()
           setTimeout(() => onComplete(updatedPairs, totalDuration, faceMetricsRef.current, recordingUrlRef.current), 800)
