@@ -17,3 +17,6 @@ dist/
 
 # Claude Code
 .claude/
+
+# Generated interview recordings
+backend/recordings/

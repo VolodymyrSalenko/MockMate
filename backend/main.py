@@ -5,6 +5,7 @@ import re
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from datetime import datetime
 from typing import List, Optional
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -336,6 +337,19 @@ async def respond(req: RespondRequest):
     return {"reply": reply, "done": done, "followup": False}
 
 
+@app.post("/upload-recording")
+async def upload_recording(file: UploadFile = File(...)):
+    recordings_dir = "recordings"
+    os.makedirs(recordings_dir, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    filename = f"mockmate-recording-{timestamp}.webm"
+    file_path = os.path.join(recordings_dir, filename)
+    content = await file.read()
+    with open(file_path, "wb") as f:
+        f.write(content)
+    return {"message": "Recording saved successfully", "filename": filename, "path": file_path}
+
+
 @app.post("/debrief")
 async def debrief(req: DebriefRequest):
     if len(req.qa_pairs) == 0:
@@ -352,8 +366,7 @@ async def debrief(req: DebriefRequest):
     ]
 
     try:
-        # More tokens to accommodate ideal_answer fields
-        raw = chat(messages, max_tokens=1800)
+        raw = chat(messages, max_tokens=3000)
         data = extract_json(raw)
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Failed to parse debrief response as JSON")

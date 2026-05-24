@@ -142,3 +142,12 @@ Never commit `.env` files — they are in `.gitignore`.
 
 - **$0** — STT, TTS, and state management use free browser APIs
 - **~$0.001–0.003 per interview** — Claude Haiku only, with history trimming to last 6 messages
+
+## Contributors
+
+| GitHub | Profile |
+|--------|---------|
+| omairtemurian | [@omairtemurian](https://github.com/omairtemurian) |
+| romanandreyev-gif | [@romanandreyev-gif](https://github.com/romanandreyev-gif) |
+| VolodymyrSalenko | [@VolodymyrSalenko](https://github.com/VolodymyrSalenko) |
+| olha-mytrofanova | [@olha-mytrofanova](https://github.com/olha-mytrofanova) |

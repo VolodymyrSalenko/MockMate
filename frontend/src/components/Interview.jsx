@@ -1,6 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, forwardRef } from 'react'
 import { useTTS } from '../hooks/useTTS'
 import { useSTT } from '../hooks/useSTT'
+import { useFaceAnalysis } from '../hooks/useFaceAnalysis'
+import { useMediaRecorder } from '../hooks/useMediaRecorder'
 import { analyzeAnswer, getHints, wpmColor, durationLabel } from '../utils/speechAnalytics'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
@@ -9,6 +11,18 @@ const MicIcon = () => (
   <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
       d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+  </svg>
+)
+
+const CameraIcon = ({ on }) => on ? (
+  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+      d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.89L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+  </svg>
+) : (
+  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+      d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.89L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2zM3 3l18 18" />
   </svg>
 )
 
@@ -47,16 +61,7 @@ function CountdownRing({ seconds, total = 90, visible }) {
 }
 
 function VideoAvatar({ status, compact = false }) {
-  const videoRef = useRef(null)
   const isSpeaking = status === 'speaking'
-  const [videoOk, setVideoOk] = useState(true)
-
-  useEffect(() => {
-    const vid = videoRef.current
-    if (!vid || !videoOk) return
-    if (isSpeaking) vid.play().catch(() => {})
-    else vid.pause()
-  }, [isSpeaking, videoOk])
 
   return (
     <div className={`flex ${compact ? 'flex-row items-center gap-3' : 'flex-col items-center gap-4'}`}>
@@ -73,14 +78,12 @@ function VideoAvatar({ status, compact = false }) {
         <div className={`relative rounded-full overflow-hidden transition-all duration-500 ${compact ? 'w-12 h-12' : 'w-28 h-28'} ${
           isSpeaking ? 'ring-2 ring-emerald-400 shadow-lg shadow-emerald-500/40' : 'ring-2 ring-slate-700/60'
         }`}>
-          {videoOk ? (
-            <video ref={videoRef} src="/alex-talking.mp4" loop muted playsInline preload="auto"
-              onError={() => setVideoOk(false)} className="w-full h-full object-cover" />
-          ) : (
-            <div className="w-full h-full bg-gradient-to-br from-emerald-400 via-teal-400 to-cyan-500 flex items-center justify-center">
-              <span className={`font-black text-slate-900 select-none ${compact ? 'text-lg' : 'text-3xl'}`}>A</span>
-            </div>
-          )}
+          <div className="w-full h-full bg-gradient-to-br from-emerald-400 via-teal-400 to-cyan-500 flex items-center justify-center relative">
+            <span className={`font-black text-slate-900 select-none ${compact ? 'text-lg' : 'text-3xl'}`}>A</span>
+            <img src="/alex-avatar.jpg" alt="Alex"
+              className="absolute inset-0 w-full h-full object-cover object-top"
+              onError={(e) => { e.target.style.display = 'none' }} />
+          </div>
         </div>
       </div>
       <div className={compact ? '' : 'text-center'}>
@@ -136,23 +139,57 @@ function HintCard({ hints, analytics, questionIndex }) {
 }
 
 // ── Webcam PiP ───────────────────────────────────────────────────────────────
-function WebcamPiP({ stream }) {
-  const ref = useRef(null)
+const WebcamPiP = forwardRef(function WebcamPiP({ stream, metrics }, ref) {
   useEffect(() => {
     if (ref.current && stream) ref.current.srcObject = stream
-  }, [stream])
+  }, [stream, ref])
   if (!stream) return null
+
+  const ready = metrics?.samplesCount > 10
+  const eyeColor = !ready ? '' :
+    metrics.eyeContactPct >= 70 ? 'bg-emerald-600/80' :
+    metrics.eyeContactPct >= 40 ? 'bg-amber-500/80'   : 'bg-red-500/80'
+  const headColor = !ready ? '' :
+    metrics.headStabilityPct >= 70 ? 'bg-emerald-600/80' :
+    metrics.headStabilityPct >= 40 ? 'bg-amber-500/80'   : 'bg-red-500/80'
+  const headLabel = !ready ? null :
+    metrics.headStabilityPct >= 70 ? 'Upright' :
+    metrics.headStabilityPct >= 40 ? 'Drifting' : 'Posture'
+  const exprMeta = !ready ? null :
+    metrics.expression === 'smiling'  ? { label: 'Smiling',  color: 'bg-yellow-500/80', icon: '😊' } :
+    metrics.expression === 'serious'  ? { label: 'Serious',  color: 'bg-slate-600/80',  icon: '😐' } :
+                                        { label: 'Neutral',  color: 'bg-slate-500/80',  icon: '🙂' }
+
   return (
-    <div className="fixed bottom-32 right-4 z-30 rounded-2xl overflow-hidden border-2 border-emerald-500/40 shadow-xl shadow-black/60 w-28 h-20 sm:w-40 sm:h-28"
-      style={{ boxShadow: '0 0 20px rgba(16,185,129,0.2)' }}>
+    <div className="w-full rounded-2xl overflow-hidden border border-emerald-500/30 shadow-lg relative"
+      style={{ aspectRatio: '4/3' }}>
       <video ref={ref} autoPlay muted playsInline className="w-full h-full object-cover scale-x-[-1]" />
       <div className="absolute top-1.5 left-1.5 flex items-center gap-1 bg-black/50 rounded-full px-1.5 py-0.5">
         <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
         <span className="text-white text-[9px] font-medium">YOU</span>
       </div>
+      {exprMeta && (
+        <div className="absolute top-1.5 right-1.5">
+          <span className={`${exprMeta.color} text-white text-[9px] font-bold px-2 py-0.5 rounded-full backdrop-blur-sm`}>
+            {exprMeta.icon} {exprMeta.label}
+          </span>
+        </div>
+      )}
+      {ready && (
+        <div className="absolute bottom-1.5 left-1.5 right-1.5 flex gap-1 flex-wrap">
+          <span className={`${eyeColor} text-white text-[9px] font-bold px-2 py-0.5 rounded-full backdrop-blur-sm`}>
+            👁 {metrics.eyeContactPct}%
+          </span>
+          {headLabel && (
+            <span className={`${headColor} text-white text-[9px] font-bold px-2 py-0.5 rounded-full backdrop-blur-sm`}>
+              {headLabel}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   )
-}
+})
 
 // ── Transcript slide-in panel ────────────────────────────────────────────────
 function TranscriptPanel({ log, onClose }) {
@@ -212,6 +249,15 @@ export default function Interview({ sessionData, onComplete }) {
   const countdownIntervalRef = useRef(null)
   const elapsedIntervalRef   = useRef(null)
   const sessionStartRef      = useRef(Date.now())
+  const webcamVideoRef       = useRef(null)
+  const faceMetricsRef       = useRef(null)
+  const recordingUrlRef      = useRef(null)
+
+  const faceMetrics = useFaceAnalysis(webcamVideoRef, !!webcamStream)
+  faceMetricsRef.current = faceMetrics
+
+  const { recordingUrl, startRecording, stopRecording } = useMediaRecorder()
+  recordingUrlRef.current = recordingUrl
 
   useEffect(() => { currentIndexRef.current = currentQuestionIndex }, [currentQuestionIndex])
 
@@ -228,16 +274,18 @@ export default function Interview({ sessionData, onComplete }) {
 
   const toggleWebcam = async () => {
     if (webcamStream) {
+      stopRecording()
       webcamStream.getTracks().forEach(t => t.stop())
       setWebcamStream(null)
       setWebcamError('')
     } else {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true })
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
         setWebcamStream(stream)
         setWebcamError('')
+        startRecording(stream)
       } catch {
-        setWebcamError('Camera access denied.')
+        setWebcamError('Camera or microphone access denied.')
       }
     }
   }
@@ -298,7 +346,8 @@ export default function Interview({ sessionData, onComplete }) {
       speak(reply, () => {
         if (done) {
           const totalDuration = Math.round((Date.now() - sessionStartRef.current) / 1000)
-          setTimeout(() => onComplete(updatedPairs, totalDuration), 800)
+          stopRecording()
+          setTimeout(() => onComplete(updatedPairs, totalDuration, faceMetricsRef.current, recordingUrlRef.current), 800)
         } else {
           setCurrentQuestionIndex(i => i + 1)
           setStatus('idle')
@@ -418,17 +467,6 @@ export default function Interview({ sessionData, onComplete }) {
               {fmtTime(elapsedSeconds)}
             </div>
 
-            {/* Webcam toggle */}
-            <button
-              onClick={toggleWebcam}
-              title={webcamStream ? 'Hide camera' : 'Show camera (simulate video interview)'}
-              className={`p-1.5 rounded-full text-sm transition-all border ${
-                webcamStream ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' : 'glass-light border-slate-700/40 text-slate-500 hover:text-slate-300'
-              }`}
-            >
-              📷
-            </button>
-
             {/* Transcript toggle */}
             <button
               onClick={() => setShowTranscript(o => !o)}
@@ -469,10 +507,14 @@ export default function Interview({ sessionData, onComplete }) {
           flex flex-row lg:flex-col items-center justify-between lg:justify-center
           py-3 px-4 lg:py-8 lg:px-6 gap-3 lg:gap-6">
 
-          {/* Avatar */}
-          <div className="flex-shrink-0">
+          {/* Avatar + webcam feed */}
+          <div className="flex-shrink-0 flex flex-col items-center gap-3">
             <div className="block lg:hidden"><VideoAvatar status={status} compact /></div>
             <div className="hidden lg:block"><VideoAvatar status={status} /></div>
+            {/* Webcam below Alex — desktop only */}
+            <div className="hidden lg:block w-full px-1">
+              <WebcamPiP ref={webcamVideoRef} stream={webcamStream} metrics={faceMetrics} />
+            </div>
           </div>
 
           {/* Middle section */}
@@ -555,47 +597,72 @@ export default function Interview({ sessionData, onComplete }) {
             <div className="flex flex-col items-center gap-2 sm:gap-3">
               <AudioWaveform active={isListening} />
 
-              {/* Mic button */}
-              <div className="relative w-20 h-20 sm:w-24 sm:h-24 flex items-center justify-center">
-                <CountdownRing seconds={countdown} total={90} visible={isListening} />
-                {status === 'idle' && (
-                  <>
-                    <span className="absolute w-20 h-20 sm:w-24 sm:h-24 rounded-full border border-emerald-500/20 animate-ping" style={{ animationDuration: '2s' }} />
-                    <span className="absolute w-24 h-24 sm:w-28 sm:h-28 rounded-full border border-emerald-500/10 animate-ping" style={{ animationDuration: '2.5s' }} />
-                  </>
-                )}
-                <button
-                  onMouseDown={handleMicDown} onMouseUp={handleMicUp}
-                  onTouchStart={(e) => { e.preventDefault(); handleMicDown() }}
-                  onTouchEnd={(e)   => { e.preventDefault(); handleMicUp()   }}
-                  disabled={micDisabled}
-                  className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center transition-all duration-200 select-none z-10
-                    ${isListening
-                      ? 'bg-gradient-to-br from-red-500 to-rose-600 text-white btn-recording scale-110'
-                      : isSpeaking || isThinking
-                      ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
-                      : 'bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-xl shadow-emerald-500/40 hover:shadow-emerald-500/60 hover:scale-105 animate-idle-ring'
-                    }`}
-                >
-                  <MicIcon />
-                </button>
+              {/* Mic + Camera row */}
+              <div className="flex items-center gap-6 sm:gap-8">
+                {/* Camera button */}
+                <div className="flex flex-col items-center gap-1.5">
+                  <button
+                    onClick={toggleWebcam}
+                    title={webcamStream ? 'Turn off camera' : 'Turn on camera for posture & eye contact analysis'}
+                    className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center transition-all duration-200 select-none
+                      ${webcamStream
+                        ? 'bg-gradient-to-br from-blue-500 to-indigo-500 text-white shadow-xl shadow-blue-500/40 hover:scale-105'
+                        : 'glass-light border border-slate-700/60 text-slate-400 hover:text-slate-200 hover:border-slate-500 hover:scale-105'
+                      }`}
+                  >
+                    <CameraIcon on={!!webcamStream} />
+                  </button>
+                  <span className={`text-[10px] font-semibold tracking-wide ${webcamStream ? 'text-blue-400' : 'text-slate-600'}`}>
+                    {webcamStream ? 'Camera On' : 'Camera'}
+                  </span>
+                </div>
+
+                {/* Mic button */}
+                <div className="flex flex-col items-center gap-1.5">
+                  <div className="relative w-20 h-20 sm:w-24 sm:h-24 flex items-center justify-center">
+                    <CountdownRing seconds={countdown} total={90} visible={isListening} />
+                    {status === 'idle' && (
+                      <>
+                        <span className="absolute w-20 h-20 sm:w-24 sm:h-24 rounded-full border border-emerald-500/20 animate-ping" style={{ animationDuration: '2s' }} />
+                        <span className="absolute w-24 h-24 sm:w-28 sm:h-28 rounded-full border border-emerald-500/10 animate-ping" style={{ animationDuration: '2.5s' }} />
+                      </>
+                    )}
+                    <button
+                      onMouseDown={handleMicDown} onMouseUp={handleMicUp}
+                      onTouchStart={(e) => { e.preventDefault(); handleMicDown() }}
+                      onTouchEnd={(e)   => { e.preventDefault(); handleMicUp()   }}
+                      disabled={micDisabled}
+                      className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center transition-all duration-200 select-none z-10
+                        ${isListening
+                          ? 'bg-gradient-to-br from-red-500 to-rose-600 text-white btn-recording scale-110'
+                          : isSpeaking || isThinking
+                          ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
+                          : 'bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-xl shadow-emerald-500/40 hover:shadow-emerald-500/60 hover:scale-105 animate-idle-ring'
+                        }`}
+                    >
+                      <MicIcon />
+                    </button>
+                  </div>
+                  <span className={`text-[10px] font-semibold tracking-wide ${
+                    isListening ? 'text-red-400' : isSpeaking ? 'text-slate-600' : isThinking ? 'text-yellow-400' : 'text-slate-500'
+                  }`}>
+                    {isListening ? 'Listening...' : isSpeaking ? 'Alex speaking' : isThinking ? 'Thinking...' : 'Hold to speak'}
+                  </span>
+                </div>
               </div>
 
               <p className={`text-xs font-semibold tracking-wide transition-colors duration-300 text-center ${
                 isListening ? 'text-red-400' : isSpeaking ? 'text-slate-600' : isThinking ? 'text-yellow-400' : 'text-slate-500'
               }`}>
-                {isListening  ? `Listening… ${countdown}s — press Space to send` :
-                 isSpeaking   ? 'Alex is speaking...' :
-                 isThinking   ? 'Processing your answer...' :
+                {isListening ? `${countdown}s remaining — press Space to send` :
+                 isSpeaking  ? 'Alex is speaking...' :
+                 isThinking  ? 'Processing your answer...' :
                  'Hold mic · or Space to start / stop'}
               </p>
             </div>
           </div>
         </div>
       </div>
-
-      {/* Webcam PiP */}
-      <WebcamPiP stream={webcamStream} />
 
       {/* Transcript panel */}
       {showTranscript && <TranscriptPanel log={conversationLog} onClose={() => setShowTranscript(false)} />}

@@ -285,7 +285,55 @@ function ShareCard({ score, role, difficulty, strength, date, cardRef }) {
   )
 }
 
-export default function Debrief({ qaPairs, role, difficulty, duration, onRetry }) {
+function BodyLanguageCard({ metrics }) {
+  if (!metrics || metrics.samplesCount < 30) return null
+
+  const eyePct  = metrics.eyeContactPct
+  const headPct = metrics.headStabilityPct
+  const conf    = metrics.confidenceScore
+
+  const eyeColor  = eyePct  >= 70 ? 'bg-emerald-500' : eyePct  >= 40 ? 'bg-amber-400' : 'bg-red-500'
+  const headColor = headPct >= 70 ? 'bg-emerald-500' : headPct >= 40 ? 'bg-amber-400' : 'bg-red-500'
+  const confColor = conf    >= 7  ? 'text-emerald-400' : conf >= 4 ? 'text-amber-400' : 'text-red-400'
+
+  const tip = eyePct < 50
+    ? `Try to keep your eyes on the camera — you maintained eye contact only ${eyePct}% of the time.`
+    : headPct < 50
+    ? `Work on keeping your head still and upright — steady posture reads as more confident.`
+    : `Strong body language overall — consistent eye contact and stable posture.`
+
+  return (
+    <div className="glass border border-slate-700/40 rounded-3xl p-6 space-y-4 animate-fade-up" style={{ animationDelay: '0.12s' }}>
+      <div className="flex items-center justify-between">
+        <p className="text-white font-bold text-lg">👁 Body Language</p>
+        <span className={`text-2xl font-black ${confColor}`}>{conf.toFixed(1)}<span className="text-slate-600 text-sm font-normal">/10</span></span>
+      </div>
+      <div className="space-y-3">
+        <div>
+          <div className="flex justify-between text-xs mb-1">
+            <span className="text-slate-400 font-semibold">Eye Contact</span>
+            <span className={eyePct >= 70 ? 'text-emerald-400' : eyePct >= 40 ? 'text-amber-400' : 'text-red-400'}>{eyePct}%</span>
+          </div>
+          <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+            <div className={`h-full rounded-full transition-all duration-700 ${eyeColor}`} style={{ width: `${eyePct}%` }} />
+          </div>
+        </div>
+        <div>
+          <div className="flex justify-between text-xs mb-1">
+            <span className="text-slate-400 font-semibold">Head Stability</span>
+            <span className={headPct >= 70 ? 'text-emerald-400' : headPct >= 40 ? 'text-amber-400' : 'text-red-400'}>{headPct}%</span>
+          </div>
+          <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+            <div className={`h-full rounded-full transition-all duration-700 ${headColor}`} style={{ width: `${headPct}%` }} />
+          </div>
+        </div>
+      </div>
+      <p className="text-slate-400 text-sm leading-relaxed border-t border-slate-700/40 pt-3">{tip}</p>
+    </div>
+  )
+}
+
+export default function Debrief({ qaPairs, role, difficulty, duration, faceMetrics, recording, onRetry }) {
   const [debrief,   setDebrief]   = useState(null)
   const [loading,   setLoading]   = useState(true)
   const [error,     setError]     = useState('')
@@ -435,6 +483,31 @@ export default function Debrief({ qaPairs, role, difficulty, duration, onRetry }
 
         {/* Speech overview */}
         <OverallSpeechSummary qaPairs={qaPairs} sessionDuration={duration} />
+
+        {/* Body language */}
+        <BodyLanguageCard metrics={faceMetrics} />
+
+        {/* Interview recording replay */}
+        {recording && (
+          <div className="glass border border-slate-700/40 rounded-3xl p-6 space-y-4 animate-fade-up">
+            <div>
+              <p className="text-white font-bold text-lg">🎥 Interview Recording</p>
+              <p className="text-slate-500 text-sm mt-1">Review your webcam recording from this interview session.</p>
+            </div>
+            <video
+              src={recording}
+              controls
+              className="w-full rounded-2xl border border-slate-700/50 bg-black"
+            />
+            <a
+              href={recording}
+              download={`MockMate-recording-${new Date().toISOString().slice(0,10)}.webm`}
+              className="inline-flex items-center justify-center gap-2 glass-light border border-slate-700/50 hover:border-emerald-500/40 text-slate-300 hover:text-emerald-400 font-semibold px-5 py-3 rounded-2xl transition-all"
+            >
+              ⬇️ Download Recording
+            </a>
+          </div>
+        )}
 
         {/* Chart */}
         <AnswerLengthChart answers={debrief.answers} />
