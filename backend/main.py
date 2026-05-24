@@ -358,6 +358,19 @@ async def upload_recording(file: UploadFile = File(...)):
         "path": file_path,
     }
 
+@app.post("/upload-recording")
+async def upload_recording(file: UploadFile = File(...)):
+    recordings_dir = "recordings"
+    os.makedirs(recordings_dir, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    filename = f"mockmate-recording-{timestamp}.webm"
+    file_path = os.path.join(recordings_dir, filename)
+    content = await file.read()
+    with open(file_path, "wb") as f:
+        f.write(content)
+    return {"message": "Recording saved successfully", "filename": filename, "path": file_path}
+
+
 @app.post("/debrief")
 async def debrief(req: DebriefRequest):
     if len(req.qa_pairs) == 0:
@@ -375,11 +388,6 @@ async def debrief(req: DebriefRequest):
 
     try:
         raw = chat(messages, max_tokens=3000)
-        # Debug log for local development.
-        # If Claude returns invalid JSON, this helps us see the actual response.
-        print("DEBRIEF RAW RESPONSE:")
-        print(raw)
-
         data = extract_json(raw)
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Failed to parse debrief response as JSON")

@@ -9,6 +9,8 @@ export default function App() {
   const [qaPairs,     setQaPairs]     = useState([])
   const [duration,    setDuration]    = useState(0)
   const [recording, setRecording]     = useState(null)
+  const [faceMetrics, setFaceMetrics] = useState(null)
+  const [recording,   setRecording]   = useState(null)
 
   const handleStart = (data) => {
     setSessionData(data)
@@ -24,6 +26,16 @@ export default function App() {
     setDuration(totalDuration || 0)
     setRecording(recordingData || null)
 
+    setFaceMetrics(null)
+    setRecording(null)
+    setView('interview')
+  }
+
+  const handleComplete = (pairs, totalDuration, metrics, recordingData) => {
+    setQaPairs(pairs)
+    setDuration(totalDuration || 0)
+    setFaceMetrics(metrics || null)
+    setRecording(recordingData || null)
     setView('debrief')
   }
 
@@ -33,6 +45,8 @@ export default function App() {
     setDuration(0)
     setRecording(null)
 
+    setFaceMetrics(null)
+    setRecording(null)
     setView('landing')
   }
 
@@ -48,6 +62,8 @@ export default function App() {
           role={sessionData?.role || 'the position'}
           difficulty={sessionData?.difficulty || 'Mid'}
           duration={duration}
+          faceMetrics={faceMetrics}
+          recording={recording}
           onRetry={handleRetry}
           recording={recording}
         />

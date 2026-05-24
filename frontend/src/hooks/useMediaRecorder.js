@@ -17,6 +17,10 @@ export function useMediaRecorder() {
     const formData = new FormData()
     formData.append('file', blob, 'interview-recording.webm')
 
+
+  const uploadRecording = async (blob) => {
+    const formData = new FormData()
+    formData.append('file', blob, 'interview-recording.webm')
     const response = await fetch(`${BACKEND_URL}/upload-recording`, {
       method: 'POST',
       body: formData,
@@ -26,6 +30,7 @@ export function useMediaRecorder() {
       throw new Error('Recording upload failed')
     }
 
+    if (!response.ok) throw new Error('Recording upload failed')
     return response.json()
   }
 
@@ -54,6 +59,12 @@ export function useMediaRecorder() {
         if (event.data && event.data.size > 0) {
           chunksRef.current.push(event.data)
         }
+    try {
+      chunksRef.current = []
+      const recorder = new MediaRecorder(stream, { mimeType: 'video/webm' })
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) chunksRef.current.push(event.data)
       }
 
       recorder.onstop = async () => {
@@ -72,6 +83,12 @@ export function useMediaRecorder() {
           setRecordingError('')
         } catch (error) {
           console.error('Recording upload failed:', error)
+          const blob = new Blob(chunksRef.current, { type: 'video/webm' })
+          const url = URL.createObjectURL(blob)
+          setRecordingUrl(url)
+          await uploadRecording(blob)
+          setRecordingError('')
+        } catch {
           setRecordingError('Recording was created but could not be saved to backend.')
         } finally {
           setIsRecording(false)
@@ -86,6 +103,9 @@ export function useMediaRecorder() {
       setSavedRecordingPath(null)
     } catch (error) {
       console.error('Recording failed to start:', error)
+      setIsRecording(true)
+      setRecordingError('')
+    } catch {
       setRecordingError('Recording failed to start.')
     }
   }, [])
@@ -121,4 +141,17 @@ export function useMediaRecorder() {
     stopRecording,
     clearRecording,
   }
+}
+    if (recorder && recorder.state !== 'inactive') recorder.stop()
+  }, [])
+
+  const clearRecording = useCallback(() => {
+    if (recordingUrl) URL.revokeObjectURL(recordingUrl)
+    chunksRef.current = []
+    setRecordingUrl(null)
+    setRecordingError('')
+    setIsRecording(false)
+  }, [recordingUrl])
+
+  return { recordingUrl, isRecording, recordingError, startRecording, stopRecording, clearRecording }
 }

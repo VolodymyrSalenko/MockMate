@@ -1,12 +1,18 @@
 import { useCallback, useRef } from 'react'
 
 function pickVoice(voices) {
-  const en = voices.filter((v) => v.lang === 'en-US' || v.lang === 'en_US')
+  const en = voices.filter((v) => v.lang.startsWith('en'))
+  // Prefer high-quality male voices by name (Chrome/Edge on Windows)
   return (
-    en.find((v) => /Natural/i.test(v.name)) ||
-    en.find((v) => /Online/i.test(v.name)) ||
-    en.find((v) => /Google/i.test(v.name)) ||
-    en.find((v) => /Aria|Jenny|Guy|Zira|David/i.test(v.name)) ||
+    en.find((v) => /Guy/i.test(v.name))                          ||
+    en.find((v) => /Davis/i.test(v.name))                        ||
+    en.find((v) => /Ryan/i.test(v.name))                         ||
+    en.find((v) => /Liam/i.test(v.name))                         ||
+    en.find((v) => /David/i.test(v.name))                        ||
+    en.find((v) => /Male/i.test(v.name))                         ||
+    en.find((v) => /Google UK English Male/i.test(v.name))       ||
+    en.find((v) => /Natural/i.test(v.name) && !/aria|jenny|zira|sara|monica|samantha/i.test(v.name)) ||
+    en.find((v) => !/aria|jenny|zira|sara|monica|samantha/i.test(v.name)) ||
     en[0] ||
     voices[0]
   )
@@ -54,8 +60,8 @@ export function useTTS() {
 
         const utterance = new SpeechSynthesisUtterance(sentences[idx++])
         if (voice) utterance.voice = voice
-        utterance.rate   = 0.90
-        utterance.pitch  = 1.0
+        utterance.rate   = 0.88
+        utterance.pitch  = 0.6
         utterance.volume = 1.0
 
         // Per-utterance flag so Chrome's occasional double-onend is also harmless
