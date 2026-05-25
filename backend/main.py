@@ -18,6 +18,7 @@ from prompts import (
     QUESTION_BANK_PROMPT,
 )
 
+
 load_dotenv()
 
 app = FastAPI(title="MockMate API")
