@@ -1,13 +1,18 @@
 import { useCallback, useRef } from 'react'
 
-function pickVoice(voices) {
-  const en = voices.filter((v) => v.lang === 'en-US' || v.lang === 'en_US')
+function pickVoice(voices, language = 'en-US') {
+  const langPrefix = language.split('-')[0]  // 'en' from 'en-US'
+
+  const matching = voices.filter((v) => {
+    const normalized = v.lang.replace('_', '-')
+    return normalized === language || normalized.startsWith(langPrefix + '-')
+  })
+
   return (
-    en.find((v) => /Natural/i.test(v.name)) ||
-    en.find((v) => /Online/i.test(v.name)) ||
-    en.find((v) => /Google/i.test(v.name)) ||
-    en.find((v) => /Aria|Jenny|Guy|Zira|David/i.test(v.name)) ||
-    en[0] ||
+    matching.find((v) => /Natural/i.test(v.name)) ||
+    matching.find((v) => /Online/i.test(v.name)) ||
+    matching.find((v) => /Google/i.test(v.name)) ||
+    matching[0] ||
     voices[0]
   )
 }
@@ -17,7 +22,7 @@ function toSentences(text) {
   return chunks.map((s) => s.trim()).filter(Boolean)
 }
 
-export function useTTS() {
+export function useTTS({ language = 'en-US' } = {}) {
   const keepAliveRef = useRef(null)
   const genRef       = useRef(0)
 
@@ -39,7 +44,7 @@ export function useTTS() {
         return
       }
 
-      const voice     = pickVoice(voices)
+      const voice     = pickVoice(voices, language)
       const sentences = toSentences(text)
       let idx         = 0
 
@@ -54,6 +59,7 @@ export function useTTS() {
 
         const utterance = new SpeechSynthesisUtterance(sentences[idx++])
         if (voice) utterance.voice = voice
+        utterance.lang = language
         utterance.rate   = 0.90
         utterance.pitch  = 1.0
         utterance.volume = 1.0
@@ -89,7 +95,7 @@ export function useTTS() {
     }
 
     trySpeak(10)
-  }, [])
+  }, [language])
 
   const cancel = useCallback(() => {
     genRef.current += 1

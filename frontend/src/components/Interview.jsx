@@ -242,7 +242,7 @@ export default function Interview({ sessionData, onComplete }) {
     }
   }
 
-  const { speak, isSupported: ttsSupported } = useTTS()
+  const { speak, isSupported: ttsSupported } = useTTS({ language })
 
   const handleFinalTranscript = useCallback(async (transcript) => {
     if (!transcript.trim()) return
