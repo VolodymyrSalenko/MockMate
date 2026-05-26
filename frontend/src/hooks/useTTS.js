@@ -8,7 +8,14 @@ function pickVoice(voices, language = 'en-US') {
     return normalized === language || normalized.startsWith(langPrefix + '-')
   })
 
+  // Prefer male voices (David, Mark, James, Daniel, Guy, Fred, Alex)
+  const isMale = (v) => /\b(Male|David|Mark|James|Daniel|Guy|Fred|Alex)\b/i.test(v.name)
+
   return (
+    matching.find((v) => isMale(v) && /Natural/i.test(v.name)) ||
+    matching.find((v) => isMale(v) && /Online/i.test(v.name)) ||
+    matching.find((v) => isMale(v) && /Google/i.test(v.name)) ||
+    matching.find((v) => isMale(v)) ||
     matching.find((v) => /Natural/i.test(v.name)) ||
     matching.find((v) => /Online/i.test(v.name)) ||
     matching.find((v) => /Google/i.test(v.name)) ||

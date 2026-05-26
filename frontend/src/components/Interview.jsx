@@ -297,7 +297,13 @@ export default function Interview({ sessionData, onComplete }) {
   const { speak, isSupported: ttsSupported } = useTTS({ language })
 
   const handleFinalTranscript = useCallback(async (transcript) => {
-    if (!transcript.trim()) return
+    if (!transcript.trim()) {
+      // STT ended with no speech (no-speech timeout, space pressed too fast, etc.)
+      // Must reset status so the mic button becomes usable again.
+      setStatus('idle')
+      canRecordRef.current = true
+      return
+    }
     const durationSeconds = recordingStartRef.current ? (Date.now() - recordingStartRef.current) / 1000 : 0
     recordingStartRef.current = null
     const idx       = currentIndexRef.current
@@ -340,7 +346,15 @@ export default function Interview({ sessionData, onComplete }) {
         followupGivenRef.current = true
         setStatus('speaking')
         canRecordRef.current = false
-        speak(reply, () => { setStatus('idle'); canRecordRef.current = true })
+        let followupDone = false
+        const followupComplete = () => {
+          if (followupDone) return
+          followupDone = true
+          setStatus('idle')
+          canRecordRef.current = true
+        }
+        const followupFallback = setTimeout(followupComplete, 12000)
+        speak(reply, () => { clearTimeout(followupFallback); followupComplete() })
         return
       }
 
