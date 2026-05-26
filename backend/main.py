@@ -2,8 +2,10 @@ import os
 import io
 import json
 import re
-from fastapi import FastAPI, HTTPException, UploadFile, File
+import requests as http_requests
+from fastapi import FastAPI, HTTPException, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
 from datetime import datetime
 from typing import List, Optional
@@ -387,6 +389,35 @@ async def debrief(req: DebriefRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
     return data
+
+
+@app.post("/tts")
+async def text_to_speech(request: Request):
+    body = await request.json()
+    text = (body.get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="text is required")
+
+    api_key = os.getenv("ELEVENLABS_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="ELEVENLABS_API_KEY not configured")
+
+    voice_id = "onwK4e9ZLuTAKqWW03F9"  # Daniel — professional male
+    resp = http_requests.post(
+        f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
+        headers={"xi-api-key": api_key, "Content-Type": "application/json"},
+        json={
+            "text": text,
+            "model_id": "eleven_multilingual_v2",
+            "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
+        },
+        timeout=30,
+    )
+
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"ElevenLabs error: {resp.text}")
+
+    return Response(content=resp.content, media_type="audio/mpeg")
 
 
 @app.get("/health")
