@@ -258,6 +258,7 @@ export default function Landing({ onStart }) {
           difficulty,
           company_name: companyName.trim() || null,
           interview_type: interviewType,
+          language,
         }),
       })
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || 'Failed to parse JD') }
@@ -276,7 +277,7 @@ export default function Landing({ onStart }) {
       const res = await fetch(`${BACKEND_URL}/question-bank`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ category: selectedCategory, difficulty }),
+        body: JSON.stringify({ category: selectedCategory, difficulty, language }),
       })
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || 'Failed to load questions') }
       onStart({ ...(await res.json()), difficulty, language })

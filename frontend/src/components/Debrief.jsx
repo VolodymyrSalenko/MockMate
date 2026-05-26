@@ -285,7 +285,7 @@ function ShareCard({ score, role, difficulty, strength, date, cardRef }) {
   )
 }
 
-export default function Debrief({ qaPairs, role, difficulty, duration, onRetry }) {
+export default function Debrief({ qaPairs, role, difficulty, language = 'en-US', duration, onRetry }) {
   const [debrief,   setDebrief]   = useState(null)
   const [loading,   setLoading]   = useState(true)
   const [error,     setError]     = useState('')
@@ -302,7 +302,7 @@ export default function Debrief({ qaPairs, role, difficulty, duration, onRetry }
         const res = await fetch(`${BACKEND_URL}/debrief`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ qa_pairs: cleanPairs, role }),
+          body: JSON.stringify({ qa_pairs: cleanPairs, role, language }),
         })
         if (!res.ok) throw new Error('Failed to get debrief')
         const data = await res.json()

@@ -15,6 +15,7 @@ from prompts import (
     DEBRIEF_PROMPT,
     INTERVIEW_TYPE_PROMPTS,
     QUESTION_BANK_PROMPT,
+    language_instruction,
 )
 
 load_dotenv()
@@ -57,11 +58,13 @@ class ParseJDRequest(BaseModel):
     difficulty: Optional[str] = "Mid"
     company_name: Optional[str] = None
     interview_type: Optional[str] = "full"
+    language: Optional[str] = "en-US"
 
 
 class QuestionBankRequest(BaseModel):
     category: str
     difficulty: Optional[str] = "Mid"
+    language: Optional[str] = "en-US"
 
 
 class Message(BaseModel):
@@ -78,6 +81,7 @@ class RespondRequest(BaseModel):
     cv_summary: Optional[str] = None
     difficulty: Optional[str] = "Mid"
     allow_followup: Optional[bool] = True
+    language: Optional[str] = "en-US"
 
 
 class QAPair(BaseModel):
@@ -88,6 +92,7 @@ class QAPair(BaseModel):
 class DebriefRequest(BaseModel):
     qa_pairs: List[QAPair]
     role: Optional[str] = "the position"
+    language: Optional[str] = "en-US"
 
 
 # --- Helpers ---
@@ -194,6 +199,7 @@ async def parse_jd(req: ParseJDRequest):
         company_context=company_context,
         difficulty_context=difficulty_context,
         interview_type_context=interview_type_context,
+        language_instruction=language_instruction(req.language or "en-US"),
     )
 
     try:
@@ -211,7 +217,7 @@ async def parse_jd(req: ParseJDRequest):
     if len(questions) < 5:
         raise HTTPException(status_code=500, detail="Could not generate 5 questions from JD")
 
-    intro_message = (
+    intro_message = data.get("intro_message") or (
         f"Hi{', ' + candidate_name if candidate_name and candidate_name != 'Candidate' else ''}, "
         f"I am Alex, your interviewer today. We are looking for a {role}. "
         f"I will ask you 5 questions. Take your time and speak clearly. "
@@ -243,6 +249,7 @@ async def question_bank(req: QuestionBankRequest):
         category=req.category.strip(),
         difficulty=difficulty,
         difficulty_context=difficulty_context,
+        language_instruction=language_instruction(req.language or "en-US"),
     )
 
     try:
@@ -258,7 +265,7 @@ async def question_bank(req: QuestionBankRequest):
         raise HTTPException(status_code=500, detail="Could not generate 5 questions for this category")
 
     role = data.get("role", f"{req.category} Practice")
-    intro_message = (
+    intro_message = data.get("intro_message") or (
         f"Hi, I am Alex. Today we are practising {req.category} questions at {difficulty} level. "
         f"I will ask you 5 questions. Take your time and speak clearly. "
         f"Here is your first question. {questions[0]}"
@@ -293,6 +300,7 @@ async def respond(req: RespondRequest):
             role=role,
             cv_context=cv_context,
             difficulty_context=difficulty_context,
+            language_instruction=language_instruction(req.language or "en-US"),
         )}
     ]
     messages += [{"role": m.role, "content": m.content} for m in trimmed]
@@ -345,15 +353,18 @@ async def debrief(req: DebriefRequest):
         [f"Q{i+1}: {pair.question}\nA{i+1}: {pair.answer}" for i, pair in enumerate(req.qa_pairs)]
     )
 
-    prompt = DEBRIEF_PROMPT.format(qa_pairs=qa_text)
+    prompt = DEBRIEF_PROMPT.format(
+        qa_pairs=qa_text,
+        language_instruction=language_instruction(req.language or "en-US"),
+    )
     messages = [
         {"role": "system", "content": DEBRIEF_SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
     ]
 
     try:
-        # More tokens to accommodate ideal_answer fields
-        raw = chat(messages, max_tokens=1800)
+        # Multilingual responses (DE/FR) are ~2x longer than EN — needs more headroom
+        raw = chat(messages, max_tokens=3500)
         data = extract_json(raw)
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Failed to parse debrief response as JSON")

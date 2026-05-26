@@ -1,4 +1,17 @@
+LANGUAGE_INSTRUCTIONS = {
+    "en-US": "Respond entirely in English. Use natural, conversational English.",
+    "de-DE": "Respond entirely in German (Deutsch). All your questions, acknowledgements, intro message, and feedback must be in natural conversational German. Do not mix in English.",
+    "fr-FR": "Respond entirely in French (Français). All your questions, acknowledgements, intro message, and feedback must be in natural conversational French. Do not mix in English.",
+}
+
+
+def language_instruction(language_code):
+    """Return instruction text to inject into prompts to enforce target language."""
+    return LANGUAGE_INSTRUCTIONS.get(language_code, LANGUAGE_INSTRUCTIONS["en-US"])
+
 INTERVIEWER_SYSTEM_PROMPT = """You are Alex, a professional and friendly job interviewer at a tech company. You are interviewing a candidate for the role of {role}.
+
+{language_instruction}
 
 {cv_context}
 
@@ -9,6 +22,8 @@ Ask one question at a time. After the candidate answers, give a very brief ackno
 DEBRIEF_SYSTEM_PROMPT = """You are an expert interview coach. Evaluate each answer fairly and constructively. Return ONLY a valid JSON object. No preamble. No markdown. No backticks. No extra text before or after the JSON."""
 
 PARSE_JD_PROMPT = """You are preparing a personalized job interview.
+
+{language_instruction}
 
 Job Description:
 {jd_text}
@@ -27,6 +42,7 @@ Generate a JSON object with exactly this structure (no preamble, no markdown, no
   "candidate_name": "candidate's name if found in CV, otherwise 'Candidate'",
   "skills": ["skill1", "skill2", "skill3", "skill4", "skill5"],
   "seniority": "Junior/Mid/Senior/Lead",
+  "intro_message": "A warm 4-sentence intro message from Alex the interviewer. Format: greet candidate by name if known, introduce yourself as Alex, mention the role, say you'll ask 5 questions, then ask the first question verbatim.",
   "questions": [
     "Question 1",
     "Question 2",
@@ -47,6 +63,8 @@ INTERVIEW_TYPE_PROMPTS = {
 
 QUESTION_BANK_PROMPT = """You are generating 5 targeted interview practice questions.
 
+{language_instruction}
+
 Category: {category}
 Difficulty: {difficulty}
 
@@ -58,6 +76,7 @@ Generate exactly 5 interview questions for this category. Make them progressivel
   "candidate_name": "Candidate",
   "skills": ["skill1", "skill2", "skill3", "skill4", "skill5"],
   "seniority": "{difficulty}",
+  "intro_message": "A warm 4-sentence intro from Alex: greet candidate, say you're Alex, mention this is {category} practice at {difficulty} level, mention 5 questions, then ask the first question verbatim.",
   "questions": [
     "Question 1",
     "Question 2",
@@ -81,7 +100,11 @@ Category guidelines:
 - Data Structures & Algorithms: Classic DSA problems, complexity analysis, problem-solving
 - Communication: Stakeholder management, presenting ideas, cross-functional work"""
 
-DEBRIEF_PROMPT = """Evaluate these interview answers. For each, score on:
+DEBRIEF_PROMPT = """Evaluate these interview answers.
+
+{language_instruction}
+
+For each, score on:
 - Relevance to question (1-10)
 - Use of specific examples (1-10)
 - Clarity and structure (1-10)
