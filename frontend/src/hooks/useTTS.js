@@ -1,26 +1,21 @@
 import { useCallback, useRef } from 'react'
 
 function pickVoice(voices, language = 'en-US') {
-  const langPrefix = language.split('-')[0]  // 'en' from 'en-US'
+  const langPrefix = language.split('-')[0]
 
   const matching = voices.filter((v) => {
     const normalized = v.lang.replace('_', '-')
     return normalized === language || normalized.startsWith(langPrefix + '-')
   })
 
-  // For English prefer high-quality male voices
-  if (langPrefix === 'en') {
-    const en = matching.length ? matching : voices.filter(v => v.lang.startsWith('en'))
-    return (
-      en.find((v) => /Guy/i.test(v.name))    ||
-      en.find((v) => /Davis/i.test(v.name))  ||
-      en.find((v) => /Natural/i.test(v.name)) ||
-      en[0] ||
-      voices[0]
-    )
-  }
+  // Prefer male voices (David, Mark, James, Daniel, Guy, Fred, Alex)
+  const isMale = (v) => /\b(Male|David|Mark|James|Daniel|Guy|Fred|Alex)\b/i.test(v.name)
 
   return (
+    matching.find((v) => isMale(v) && /Natural/i.test(v.name)) ||
+    matching.find((v) => isMale(v) && /Online/i.test(v.name)) ||
+    matching.find((v) => isMale(v) && /Google/i.test(v.name)) ||
+    matching.find((v) => isMale(v)) ||
     matching.find((v) => /Natural/i.test(v.name)) ||
     matching.find((v) => /Online/i.test(v.name))  ||
     matching.find((v) => /Google/i.test(v.name))  ||

@@ -47,11 +47,11 @@ export function useSTT({ onFinalTranscript, language = 'en-US' }) {
     recognition.onend = () => {
       setIsListening(false)
       setInterimTranscript('')
-      // Fall back to last interim if the engine never produced a final result
+      // Fall back to last interim if the engine never produced a final result.
+      // Always call onFinalTranscript — even with '' — so Interview can reset
+      // status to idle when STT ends with no speech (no-speech timeout, etc.)
       const result = finalRef.current.trim() || lastInterimRef.current.trim()
-      if (result && onFinalTranscript) {
-        onFinalTranscript(result)
-      }
+      if (onFinalTranscript) onFinalTranscript(result)
       finalRef.current = ''
       lastInterimRef.current = ''
     }

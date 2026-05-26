@@ -297,7 +297,13 @@ export default function Interview({ sessionData, onComplete }) {
   const { speak, isSupported: ttsSupported } = useTTS({ language })
 
   const handleFinalTranscript = useCallback(async (transcript) => {
-    if (!transcript.trim()) return
+    if (!transcript.trim()) {
+      // STT ended with no speech (no-speech timeout, space pressed too fast, etc.)
+      // Must reset status so the mic button becomes usable again.
+      setStatus('idle')
+      canRecordRef.current = true
+      return
+    }
     const durationSeconds = recordingStartRef.current ? (Date.now() - recordingStartRef.current) / 1000 : 0
     recordingStartRef.current = null
     const idx       = currentIndexRef.current
@@ -340,7 +346,15 @@ export default function Interview({ sessionData, onComplete }) {
         followupGivenRef.current = true
         setStatus('speaking')
         canRecordRef.current = false
-        speak(reply, () => { setStatus('idle'); canRecordRef.current = true })
+        let followupDone = false
+        const followupComplete = () => {
+          if (followupDone) return
+          followupDone = true
+          setStatus('idle')
+          canRecordRef.current = true
+        }
+        const followupFallback = setTimeout(followupComplete, 12000)
+        speak(reply, () => { clearTimeout(followupFallback); followupComplete() })
         return
       }
 
@@ -361,11 +375,16 @@ export default function Interview({ sessionData, onComplete }) {
         const fallbackTimer = setTimeout(complete, 12000)
         speak(reply, () => { clearTimeout(fallbackTimer); complete() })
       } else {
-        speak(reply, () => {
+        let advanced = false
+        const advance = () => {
+          if (advanced) return
+          advanced = true
           setCurrentQuestionIndex(i => i + 1)
           setStatus('idle')
           canRecordRef.current = true
-        })
+        }
+        const advanceFallback = setTimeout(advance, 12000)
+        speak(reply, () => { clearTimeout(advanceFallback); advance() })
       }
     } catch {
       setError('Something went wrong, please try again.')
@@ -461,7 +480,7 @@ export default function Interview({ sessionData, onComplete }) {
   const progressPct = Math.round((currentQuestionIndex / questions.length) * 100)
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col overflow-hidden relative">
+    <div className="h-screen bg-slate-950 flex flex-col overflow-hidden relative">
       {/* Background orbs */}
       <div className="fixed inset-0 pointer-events-none z-0">
         <div className="animate-orb absolute top-0 right-0 w-72 h-72 rounded-full bg-emerald-500/6 blur-3xl" />

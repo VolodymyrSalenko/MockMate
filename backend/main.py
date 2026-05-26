@@ -344,27 +344,6 @@ async def respond(req: RespondRequest):
     done = idx >= len(req.questions) - 1
     return {"reply": reply, "done": done, "followup": False}
 
-@app.post("/upload-recording")
-async def upload_recording(file: UploadFile = File(...)):
-    # Recordings are saved locally for MVP testing only.
-    # In production, this should be moved to cloud storage or database-backed storage.
-    recordings_dir = "recordings"
-    os.makedirs(recordings_dir, exist_ok=True)
-
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    filename = f"mockmate-recording-{timestamp}.webm"
-    file_path = os.path.join(recordings_dir, filename)
-
-    content = await file.read()
-
-    with open(file_path, "wb") as f:
-        f.write(content)
-
-    return {
-        "message": "Recording saved successfully",
-        "filename": filename,
-        "path": file_path,
-    }
 
 @app.post("/upload-recording")
 async def upload_recording(file: UploadFile = File(...)):
