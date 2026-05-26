@@ -1,103 +1,84 @@
 import { useCallback, useRef } from 'react'
 
-function pickVoice(voices) {
-  const en = voices.filter((v) => v.lang === 'en-US' || v.lang === 'en_US')
-  return (
-    en.find((v) => /Natural/i.test(v.name)) ||
-    en.find((v) => /Online/i.test(v.name)) ||
-    en.find((v) => /Google/i.test(v.name)) ||
-    en.find((v) => /Aria|Jenny|Guy|Zira|David/i.test(v.name)) ||
-    en[0] ||
-    voices[0]
-  )
-}
+const ELEVENLABS_KEY  = import.meta.env.VITE_ELEVENLABS_API_KEY || ''
+const ELEVENLABS_URL  = 'https://api.elevenlabs.io/v1/text-to-speech/onwK4e9ZLuTAKqWW03F9'
 
-function toSentences(text) {
-  const chunks = text.split(/(?<=[.!?])\s+/)
-  return chunks.map((s) => s.trim()).filter(Boolean)
-}
-
-export function useTTS() {
-  const keepAliveRef = useRef(null)
-  const genRef       = useRef(0)
-
-  const speak = useCallback((text, onEnd) => {
-    // Increment generation BEFORE cancel so any onend fired by cancel()
-    // sees the new generation and exits immediately.
-    genRef.current += 1
-    const myGen = genRef.current
-
-    window.speechSynthesis.cancel()
-    clearInterval(keepAliveRef.current)
-
-    const trySpeak = (attemptsLeft) => {
-      if (genRef.current !== myGen) return
-
-      const voices = window.speechSynthesis.getVoices()
-      if (voices.length === 0 && attemptsLeft > 0) {
-        setTimeout(() => trySpeak(attemptsLeft - 1), 200)
-        return
-      }
-
-      const voice     = pickVoice(voices)
-      const sentences = toSentences(text)
-      let idx         = 0
-
-      const speakNext = () => {
-        // Bail if a newer speak() or cancel() has taken over
-        if (genRef.current !== myGen) return
-
-        if (idx >= sentences.length) {
-          if (onEnd) onEnd()
-          return
-        }
-
-        const utterance = new SpeechSynthesisUtterance(sentences[idx++])
-        if (voice) utterance.voice = voice
-        utterance.rate   = 0.90
-        utterance.pitch  = 1.0
-        utterance.volume = 1.0
-
-        // Per-utterance flag so Chrome's occasional double-onend is also harmless
-        let fired = false
-        utterance.onend = () => {
-          if (fired || genRef.current !== myGen) return
-          fired = true
-          setTimeout(speakNext, 120)
-        }
-        utterance.onerror = (e) => {
-          if (e.error === 'interrupted') return
-          if (!fired && genRef.current === myGen) {
-            fired = true
-            if (onEnd) onEnd()
-          }
-        }
-
-        clearInterval(keepAliveRef.current)
-        window.speechSynthesis.speak(utterance)
-
-        keepAliveRef.current = setInterval(() => {
-          if (!window.speechSynthesis.speaking) {
-            clearInterval(keepAliveRef.current)
-            return
-          }
-          window.speechSynthesis.resume()
-        }, 10000)
-      }
-
-      speakNext()
-    }
-
-    trySpeak(10)
-  }, [])
+export function useTTS({ language = 'en-US' } = {}) {
+  const audioRef = useRef(null)
+  const genRef   = useRef(0)
 
   const cancel = useCallback(() => {
     genRef.current += 1
-    clearInterval(keepAliveRef.current)
-    window.speechSynthesis.cancel()
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.src = ''
+      audioRef.current = null
+    }
   }, [])
 
-  const isSupported = typeof window !== 'undefined' && 'speechSynthesis' in window
+  const speak = useCallback((text, onEnd) => {
+    genRef.current += 1
+    const myGen = genRef.current
+
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.src = ''
+      audioRef.current = null
+    }
+
+    if (!text || !text.trim()) {
+      if (onEnd) onEnd()
+      return
+    }
+
+    fetch(ELEVENLABS_URL, {
+      method: 'POST',
+      headers: {
+        'xi-api-key': ELEVENLABS_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        text,
+        model_id: 'eleven_multilingual_v2',
+        voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+      }),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`ElevenLabs ${res.status}`)
+        return res.blob()
+      })
+      .then((blob) => {
+        if (genRef.current !== myGen) return
+        const url = URL.createObjectURL(blob)
+        const audio = new Audio(url)
+        audioRef.current = audio
+
+        audio.onended = () => {
+          if (genRef.current !== myGen) return
+          URL.revokeObjectURL(url)
+          audioRef.current = null
+          if (onEnd) onEnd()
+        }
+
+        audio.onerror = () => {
+          URL.revokeObjectURL(url)
+          audioRef.current = null
+          if (genRef.current !== myGen) return
+          if (onEnd) onEnd()
+        }
+
+        audio.play().catch(() => {
+          if (genRef.current !== myGen) return
+          if (onEnd) onEnd()
+        })
+      })
+      .catch(() => {
+        if (genRef.current !== myGen) return
+        if (onEnd) onEnd()
+      })
+  }, [])
+
+  const isSupported = true
 
   return { speak, cancel, isSupported }
 }

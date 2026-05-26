@@ -81,6 +81,11 @@ const INTERVIEW_TYPES = [
 
 const DIFFICULTY_INFO  = { Junior: 'Foundational · Learning potential', Mid: 'Examples · Technical depth', Senior: 'System design · Leadership · Impact' }
 const DIFFICULTY_EMOJI = { Junior: '🌱', Mid: '🚀', Senior: '🏆' }
+const LANGUAGES = [
+  { code: 'en-US', label: 'English',  flag: '🇬🇧' },
+  { code: 'de-DE', label: 'Deutsch',  flag: '🇩🇪' },
+  { code: 'fr-FR', label: 'Français', flag: '🇫🇷' },
+]
 
 // ── Score colour helper ─────────────────────────────────────────────────────
 function scoreColor(s) {
@@ -200,6 +205,7 @@ export default function Landing({ onStart }) {
   const [loading,      setLoading]      = useState(false)
   const [error,        setError]        = useState('')
   const [difficulty,   setDifficulty]   = useState('Mid')
+  const [language,     setLanguage]     = useState('en-US')
   const [interviewType, setInterviewType] = useState('full')
   const [showTemplates, setShowTemplates] = useState(false)
 
@@ -252,10 +258,11 @@ export default function Landing({ onStart }) {
           difficulty,
           company_name: companyName.trim() || null,
           interview_type: interviewType,
+          language,
         }),
       })
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || 'Failed to parse JD') }
-      onStart({ ...(await res.json()), difficulty, interview_type: interviewType })
+      onStart({ ...(await res.json()), difficulty, interview_type: interviewType, language })
     } catch (err) {
       setError(err.message || 'Something went wrong.')
     } finally {
@@ -270,10 +277,10 @@ export default function Landing({ onStart }) {
       const res = await fetch(`${BACKEND_URL}/question-bank`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ category: selectedCategory, difficulty }),
+        body: JSON.stringify({ category: selectedCategory, difficulty, language }),
       })
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || 'Failed to load questions') }
-      onStart({ ...(await res.json()), difficulty, interview_type: 'practice' })
+      onStart({ ...(await res.json()), difficulty, interview_type: 'practice', language })
     } catch (err) {
       setPracticeError(err.message || 'Something went wrong.')
     } finally {
@@ -304,6 +311,27 @@ export default function Landing({ onStart }) {
           </p>
         </div>
 
+{/* ── Language Selector ── */}
+        <div className="mb-5 animate-fade-up" style={{ animationDelay: '0.03s' }}>
+          <label className="block text-slate-300 text-sm font-semibold mb-2">Interview Language</label>
+          <div className="grid grid-cols-3 gap-2">
+            {LANGUAGES.map(lang => (
+              <button
+                key={lang.code}
+                onClick={() => setLanguage(lang.code)}
+                className={`py-3 rounded-2xl text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2 ${
+                  language === lang.code
+                    ? 'bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/30 scale-[1.03]'
+                    : 'glass-light border border-slate-700/40 text-slate-400 hover:border-slate-600'
+                }`}
+              >
+                <span className="text-lg">{lang.flag}</span>
+                <span>{lang.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        
         {/* ── Mode Tabs ── */}
         <div className="flex gap-2 mb-5 animate-fade-up" style={{ animationDelay: '0.05s' }}>
           {[

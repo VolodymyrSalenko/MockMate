@@ -1,6 +1,6 @@
 import { useRef, useState, useCallback } from 'react'
 
-export function useSTT({ onFinalTranscript }) {
+export function useSTT({ onFinalTranscript, language = 'en-US' }) {
   const recognitionRef = useRef(null)
   const [interimTranscript, setInterimTranscript] = useState('')
   const [isListening, setIsListening] = useState(false)
@@ -17,7 +17,7 @@ export function useSTT({ onFinalTranscript }) {
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition
     const recognition = new SpeechRecognition()
-    recognition.lang = 'en-US'
+    recognition.lang = language
     recognition.interimResults = true
     recognition.continuous = true
     recognitionRef.current = recognition
@@ -46,11 +46,11 @@ export function useSTT({ onFinalTranscript }) {
     recognition.onend = () => {
       setIsListening(false)
       setInterimTranscript('')
-      // Fall back to last interim if the engine never produced a final result
+      // Fall back to last interim if the engine never produced a final result.
+      // Always call onFinalTranscript — even with '' — so Interview can reset
+      // status to idle when STT ends with no speech (no-speech timeout, etc.)
       const result = finalRef.current.trim() || lastInterimRef.current.trim()
-      if (result && onFinalTranscript) {
-        onFinalTranscript(result)
-      }
+      if (onFinalTranscript) onFinalTranscript(result)
       finalRef.current = ''
       lastInterimRef.current = ''
     }
@@ -68,7 +68,7 @@ export function useSTT({ onFinalTranscript }) {
     } catch (e) {
       console.error('Could not start recognition:', e)
     }
-  }, [isSupported, onFinalTranscript])
+  }, [isSupported, onFinalTranscript, language])
 
   const stop = useCallback(() => {
     if (recognitionRef.current) {

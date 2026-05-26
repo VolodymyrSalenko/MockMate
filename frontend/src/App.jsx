@@ -35,17 +35,23 @@ export default function App() {
   const [sessionData, setSessionData] = useState(null)
   const [qaPairs,     setQaPairs]     = useState([])
   const [duration,    setDuration]    = useState(0)
+  const [faceMetrics, setFaceMetrics] = useState(null)
+  const [recording,   setRecording]   = useState(null)
 
   const handleStart = (data) => {
     setSessionData(data)
     setQaPairs([])
     setDuration(0)
+    setFaceMetrics(null)
+    setRecording(null)
     setView('interview')
   }
 
-  const handleComplete = (pairs, totalDuration) => {
+  const handleComplete = (pairs, totalDuration, metrics, recordingData) => {
     setQaPairs(pairs)
     setDuration(totalDuration || 0)
+    setFaceMetrics(metrics || null)
+    setRecording(recordingData || null)
     setView('debrief')
   }
 
@@ -53,6 +59,8 @@ export default function App() {
     setSessionData(null)
     setQaPairs([])
     setDuration(0)
+    setFaceMetrics(null)
+    setRecording(null)
     setView('landing')
   }
 
@@ -76,7 +84,10 @@ export default function App() {
             role={sessionData?.role || 'the position'}
             difficulty={sessionData?.difficulty || 'Mid'}
             interviewType={sessionData?.interview_type || 'full'}
+            language={sessionData?.language || 'en-US'}
             duration={duration}
+            faceMetrics={faceMetrics}
+            recording={recording}
             onRetry={handleRetry}
           />
         )}
