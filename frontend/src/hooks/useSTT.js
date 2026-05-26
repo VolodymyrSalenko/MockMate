@@ -3,7 +3,8 @@ import { useRef, useState, useCallback } from 'react'
 export function useSTT({ onFinalTranscript, language = 'en-US' }) {
   const recognitionRef = useRef(null)
   const [interimTranscript, setInterimTranscript] = useState('')
-  const [isListening, setIsListening] = useState(false)
+  const [isListening,   setIsListening]   = useState(false)
+  const [isPreparing,   setIsPreparing]   = useState(false)
   const finalRef        = useRef('')
   const lastInterimRef  = useRef('')
 
@@ -24,7 +25,7 @@ export function useSTT({ onFinalTranscript, language = 'en-US' }) {
     finalRef.current = ''
     lastInterimRef.current = ''
 
-    recognition.onstart = () => setIsListening(true)
+    recognition.onstart = () => { setIsPreparing(false); setIsListening(true) }
 
     recognition.onresult = (event) => {
       let interim = ''
@@ -59,13 +60,16 @@ export function useSTT({ onFinalTranscript, language = 'en-US' }) {
       if (e.error !== 'no-speech' && e.error !== 'aborted') {
         console.error('STT error:', e.error)
       }
+      setIsPreparing(false)
       setIsListening(false)
       setInterimTranscript('')
     }
 
     try {
+      setIsPreparing(true)
       recognition.start()
     } catch (e) {
+      setIsPreparing(false)
       console.error('Could not start recognition:', e)
     }
   }, [isSupported, onFinalTranscript, language])
@@ -80,5 +84,5 @@ export function useSTT({ onFinalTranscript, language = 'en-US' }) {
     }
   }, [])
 
-  return { start, stop, isListening, interimTranscript, isSupported }
+  return { start, stop, isListening, isPreparing, interimTranscript, isSupported }
 }

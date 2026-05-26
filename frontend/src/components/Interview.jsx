@@ -374,10 +374,17 @@ export default function Interview({ sessionData, onComplete }) {
     }
   }, [history, questions, qaPairs, speak, onComplete, role, cv_summary, difficulty, language])
 
-  const { start, stop, isListening, interimTranscript, isSupported: sttSupported } = useSTT({
+  const { start, stop, isListening, isPreparing, interimTranscript, isSupported: sttSupported } = useSTT({
     onFinalTranscript: handleFinalTranscript,
     language,
   })
+
+  // Pre-warm microphone so first button press is instant (especially for non-English)
+  useEffect(() => {
+    navigator.mediaDevices?.getUserMedia({ audio: true })
+      .then(stream => stream.getTracks().forEach(t => t.stop()))
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (isListening) {
@@ -441,14 +448,14 @@ export default function Interview({ sessionData, onComplete }) {
   }, [conversationLog, interimTranscript])
 
   const handleMicDown = () => {
-    if (!canRecordRef.current || status !== 'idle') return
+    if (!canRecordRef.current || status !== 'idle' || isPreparing) return
     recordingStartRef.current = Date.now()
     setStatus('listening')
     start()
   }
   const handleMicUp = () => { if (isListening) stop() }
 
-  const micDisabled = status !== 'idle' || !sttSupported
+  const micDisabled = status !== 'idle' || !sttSupported || isPreparing
   const isSpeaking  = status === 'speaking'
   const isThinking  = status === 'thinking'
   const progressPct = Math.round((currentQuestionIndex / questions.length) * 100)
@@ -649,6 +656,8 @@ export default function Interview({ sessionData, onComplete }) {
                       className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center transition-all duration-200 select-none z-10
                         ${isListening
                           ? 'bg-gradient-to-br from-red-500 to-rose-600 text-white btn-recording scale-110'
+                          : isPreparing
+                          ? 'bg-gradient-to-br from-yellow-500 to-amber-500 text-white animate-pulse cursor-wait'
                           : isSpeaking || isThinking
                           ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
                           : 'bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-xl shadow-emerald-500/40 hover:shadow-emerald-500/60 hover:scale-105 animate-idle-ring'
@@ -658,9 +667,9 @@ export default function Interview({ sessionData, onComplete }) {
                     </button>
                   </div>
                   <span className={`text-[10px] font-semibold tracking-wide ${
-                    isListening ? 'text-red-400' : isSpeaking ? 'text-slate-600' : isThinking ? 'text-yellow-400' : 'text-slate-500'
+                    isListening ? 'text-red-400' : isPreparing ? 'text-yellow-400' : isSpeaking ? 'text-slate-600' : isThinking ? 'text-yellow-400' : 'text-slate-500'
                   }`}>
-                    {isListening ? 'Listening...' : isSpeaking ? 'Alex speaking' : isThinking ? 'Thinking...' : 'Hold to speak'}
+                    {isListening ? 'Listening...' : isPreparing ? 'Preparing mic...' : isSpeaking ? 'Alex speaking' : isThinking ? 'Thinking...' : 'Hold to speak'}
                   </span>
                 </div>
               </div>
