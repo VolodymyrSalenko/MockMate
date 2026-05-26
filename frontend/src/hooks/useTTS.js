@@ -1,6 +1,7 @@
 import { useCallback, useRef } from 'react'
 
-const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
+const ELEVENLABS_KEY  = import.meta.env.VITE_ELEVENLABS_API_KEY || ''
+const ELEVENLABS_URL  = 'https://api.elevenlabs.io/v1/text-to-speech/onwK4e9ZLuTAKqWW03F9'
 
 export function useTTS({ language = 'en-US' } = {}) {
   const audioRef = useRef(null)
@@ -19,7 +20,6 @@ export function useTTS({ language = 'en-US' } = {}) {
     genRef.current += 1
     const myGen = genRef.current
 
-    // Stop any currently playing audio
     if (audioRef.current) {
       audioRef.current.pause()
       audioRef.current.src = ''
@@ -31,13 +31,20 @@ export function useTTS({ language = 'en-US' } = {}) {
       return
     }
 
-    fetch(`${BACKEND}/tts`, {
+    fetch(ELEVENLABS_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      headers: {
+        'xi-api-key': ELEVENLABS_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        text,
+        model_id: 'eleven_multilingual_v2',
+        voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+      }),
     })
       .then((res) => {
-        if (!res.ok) throw new Error(`TTS error ${res.status}`)
+        if (!res.ok) throw new Error(`ElevenLabs ${res.status}`)
         return res.blob()
       })
       .then((blob) => {
