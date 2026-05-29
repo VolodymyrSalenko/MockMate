@@ -211,6 +211,12 @@ export default function Landing({ onStart }) {
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef(null)
 
+// JD file upload state
+  const [jdFile, setJdFile] = useState(null)
+  const [jdLoading, setJdLoading] = useState(false)
+  const [jdError, setJdError] = useState('')
+  const jdFileInputRef = useRef(null)
+
   // Practice mode state
   const [selectedCategory, setSelectedCategory] = useState(null)
   const [practiceLoading,  setPracticeLoading]  = useState(false)
@@ -236,8 +242,49 @@ export default function Landing({ onStart }) {
     }
   }
 
+  const handleJdFileSelect = async (file) => {
+    if (!file) return
+    const ext = file.name.toLowerCase()
+    if (!ext.endsWith('.pdf') && !ext.endsWith('.docx') && !ext.endsWith('.txt')) {
+      setJdError('Please upload a PDF, DOCX, or TXT file.')
+      return
+    }
+    setJdFile(file)
+    setJdError('')
+    setJdLoading(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      // Reuse the generic backend text extraction endpoint for JD files.
+      const res = await fetch(`${BACKEND_URL}/extract-text`, {
+        method: 'POST',
+        body: formData,
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error(d.detail || 'Failed to read Job Description file')
+      }
+      const data = await res.json()
+      // Auto-fill the existing Job Description textarea with extracted text.
+      setJd(data.text || '')
+    } catch (err) {
+      setJdError(err.message || 'Failed to read Job Description file.')
+      setJdFile(null)
+    } finally {
+      setJdLoading(false)
+    }
+  }
+
   const handleDrop = (e) => { e.preventDefault(); setIsDragging(false); handleFileSelect(e.dataTransfer.files[0]) }
   const clearCV = () => { setCvFile(null); setCvText(null); setCvError(''); if (fileInputRef.current) fileInputRef.current.value = '' }
+
+  const clearJDFile = () => {
+    setJdFile(null)
+    setJdError('')
+    if (jdFileInputRef.current) {
+      jdFileInputRef.current.value = ''
+    }
+  }
 
   const handleStart = async () => {
     if (!jd.trim()) return
@@ -281,7 +328,7 @@ export default function Landing({ onStart }) {
     }
   }
 
-  const canStart    = jd.trim() && !loading && !cvLoading
+  const canStart = jd.trim() && !loading && !cvLoading && !jdLoading && !practiceLoading
   const canPractice = selectedCategory && !practiceLoading
 
   return (
@@ -357,6 +404,66 @@ export default function Landing({ onStart }) {
                   </div>
                 )}
               </div>
+
+              {/* JD Upload */}
+              <div>
+                <label className="block text-slate-300 text-sm font-semibold mb-2">
+                  Upload Job Description
+                  <span className="ml-2 text-slate-500 font-normal text-xs">(optional — PDF, DOCX, or TXT)</span>
+                </label>
+
+                {!jdFile ? (
+                  <div
+                    onClick={() => jdFileInputRef.current?.click()}
+                    className="border-2 border-dashed rounded-2xl p-4 flex items-center gap-3 cursor-pointer transition-all border-slate-700/60 hover:border-emerald-500/40 hover:bg-slate-800/40"
+                  >
+                    <div className="text-slate-500">
+                      <UploadIcon />
+                    </div>
+
+                    <div>
+                      <p className="text-slate-400 text-sm">
+                        <span className="text-emerald-400 font-semibold">Click to upload JD</span>
+                      </p>
+                      <p className="text-slate-600 text-xs">PDF · DOCX · TXT</p>
+                    </div>
+
+                    <input
+                      ref={jdFileInputRef}
+                      type="file"
+                      accept=".pdf,.docx,.txt"
+                      className="hidden"
+                      onChange={(e) => handleJdFileSelect(e.target.files[0])}
+                    />
+                  </div>
+                ) : (
+                  <div className={`border rounded-2xl px-4 py-3 flex items-center gap-3 transition-all ${
+                    jdLoading ? 'border-slate-600/50 bg-slate-800/30' : 'border-emerald-500/30 bg-emerald-500/8'
+                  }`}>
+                    <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
+                      jdLoading ? 'bg-slate-700' : 'bg-emerald-500/20 text-emerald-400'
+                    }`}>
+                      {jdLoading
+                        ? <svg className="animate-spin w-4 h-4 text-slate-300" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/></svg>
+                        : <CheckIcon />}
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <p className="text-slate-200 text-sm font-medium truncate">{jdFile.name}</p>
+                      <p className={`text-xs mt-0.5 ${jdLoading ? 'text-slate-400' : 'text-emerald-400'}`}>
+                        {jdLoading ? 'Extracting...' : '✓ Job description extracted'}
+                      </p>
+                    </div>
+
+                    <button onClick={clearJDFile} className="text-slate-600 hover:text-slate-300 transition">
+                      <XIcon />
+                    </button>
+                  </div>
+                )}
+
+                {jdError && <p className="mt-2 text-red-400 text-xs">{jdError}</p>}
+              </div>
+
 
               {/* JD textarea */}
               <div>

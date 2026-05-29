@@ -1,7 +1,5 @@
 import os
-import io
 import json
-import re
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -9,13 +7,21 @@ from datetime import datetime
 from typing import List, Optional
 from openai import OpenAI
 from dotenv import load_dotenv
-from prompts import (
+from backend.prompts import (
     INTERVIEWER_SYSTEM_PROMPT,
     DEBRIEF_SYSTEM_PROMPT,
     PARSE_JD_PROMPT,
     DEBRIEF_PROMPT,
     INTERVIEW_TYPE_PROMPTS,
     QUESTION_BANK_PROMPT,
+)
+from backend.helpers import (
+    extract_json,
+    trim_history,
+    trim_to_words,
+    chat,
+    extract_text_from_pdf,
+    extract_text_from_docx,
 )
 
 load_dotenv()
@@ -90,51 +96,6 @@ class DebriefRequest(BaseModel):
     qa_pairs: List[QAPair]
     role: Optional[str] = "the position"
 
-
-# --- Helpers ---
-
-def extract_json(text: str) -> dict:
-    cleaned = re.sub(r"```(?:json)?", "", text).replace("```", "").strip()
-    return json.loads(cleaned)
-
-
-def trim_history(history: List[Message], max_messages: int = 6) -> List[Message]:
-    return history[-max_messages:]
-
-
-def trim_to_words(text: str, max_words: int) -> str:
-    words = text.split()
-    if len(words) <= max_words:
-        return text
-    return " ".join(words[:max_words]) + "..."
-
-
-def chat(messages: list, max_tokens: int) -> str:
-    response = client.chat.completions.create(
-        model=MODEL,
-        max_tokens=max_tokens,
-        messages=messages,
-    )
-    return response.choices[0].message.content
-
-
-def extract_text_from_pdf(file_bytes: bytes) -> str:
-    import pdfplumber
-    text_parts = []
-    with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-        for page in pdf.pages:
-            t = page.extract_text()
-            if t:
-                text_parts.append(t)
-    return "\n".join(text_parts)
-
-
-def extract_text_from_docx(file_bytes: bytes) -> str:
-    from docx import Document
-    doc = Document(io.BytesIO(file_bytes))
-    return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
-
-
 # --- Endpoints ---
 
 @app.post("/extract-cv")
@@ -162,6 +123,42 @@ async def extract_cv(file: UploadFile = File(...)):
     trimmed = trim_to_words(raw_text, MAX_CV_WORDS)
     return {"cv_text": trimmed, "word_count": len(trimmed.split())}
 
+
+@app.post("/extract-text")
+async def extract_text(file: UploadFile = File(...)):
+    # Generic file text extraction endpoint.
+    # It can be reused for CV upload, Job Description upload, and future document inputs.
+    filename = file.filename.lower()
+    file_bytes = await file.read()
+    try:
+        if filename.endswith(".pdf"):
+            raw_text = extract_text_from_pdf(file_bytes)
+        elif filename.endswith(".docx"):
+            raw_text = extract_text_from_docx(file_bytes)
+        elif filename.endswith(".txt"):
+            raw_text = file_bytes.decode("utf-8", errors="ignore")
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Unsupported file type. Use PDF, DOCX, or TXT."
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to read file: {str(e)}"
+        )
+    if not raw_text.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Could not extract text from the file. Try a different format."
+        )
+    trimmed = trim_to_words(raw_text, MAX_CV_WORDS)
+    return {
+        "text": trimmed,
+        "word_count": len(trimmed.split()),
+    }
 
 @app.post("/parse-jd")
 async def parse_jd(req: ParseJDRequest):
@@ -198,7 +195,7 @@ async def parse_jd(req: ParseJDRequest):
     )
 
     try:
-        raw = chat([{"role": "user", "content": prompt}], max_tokens=800)
+        raw = chat(client, MODEL, [{"role": "user", "content": prompt}], max_tokens=800)
         data = extract_json(raw)
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Failed to parse JD response as JSON")
@@ -247,7 +244,7 @@ async def question_bank(req: QuestionBankRequest):
     )
 
     try:
-        raw = chat([{"role": "user", "content": prompt}], max_tokens=800)
+        raw = chat(client, MODEL, [{"role": "user", "content": prompt}], max_tokens=800)
         data = extract_json(raw)
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Failed to parse question bank response as JSON")
@@ -309,7 +306,7 @@ async def respond(req: RespondRequest):
         )
         messages.append({"role": "user", "content": f"[Candidate answer]: {req.user_answer}\n\n[Instruction]: {instruction}"})
         try:
-            reply = chat(messages, max_tokens=80).strip()
+            reply = chat(client, MODEL, messages, max_tokens=300).strip()
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
         return {"reply": reply, "done": False, "followup": True}
@@ -329,7 +326,7 @@ async def respond(req: RespondRequest):
     messages.append({"role": "user", "content": f"[Candidate answer]: {req.user_answer}\n\n[Instruction]: {instruction}"})
 
     try:
-        reply = chat(messages, max_tokens=300).strip()
+        reply = chat(client, MODEL, messages, max_tokens=80).strip()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -387,7 +384,8 @@ async def debrief(req: DebriefRequest):
     ]
 
     try:
-        raw = chat(messages, max_tokens=3000)
+        raw = chat(client, MODEL, messages, max_tokens=3000)
+        data = extract_json(raw)
         data = extract_json(raw)
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Failed to parse debrief response as JSON")
