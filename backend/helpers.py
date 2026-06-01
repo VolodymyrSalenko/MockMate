@@ -4,8 +4,16 @@ import re
 
 
 def extract_json(text: str) -> dict:
-    cleaned = re.sub(r"```(?:json)?", "", text).replace("```", "").strip()
-    return json.loads(cleaned)
+    cleaned = re.sub(r"```(?:json)?\s*", "", text).replace("```", "").strip()
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        # AI added preamble/postamble — find the outermost { ... }
+        start = cleaned.find('{')
+        end = cleaned.rfind('}')
+        if start != -1 and end > start:
+            return json.loads(cleaned[start:end + 1])
+        raise
 
 
 def trim_history(history, max_messages: int = 6):

@@ -26,6 +26,7 @@ from helpers import (
     extract_text_from_docx,
 )
 from database import init_db, upsert_user, save_session, get_sessions, get_session_detail
+from auth import router as auth_router
 
 
 load_dotenv()
@@ -40,10 +41,12 @@ def startup():
     except Exception as e:
         print(f"⚠️  Database init failed (dashboard disabled): {e}")
 
+app.include_router(auth_router)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "*"],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -421,34 +424,57 @@ class AnswerIn(BaseModel):
     analytics:      Optional[Any]   = None
 
 
+class FaceMetricsIn(BaseModel):
+    eye_contact_pct:       Optional[int]   = None
+    head_stability_pct:    Optional[int]   = None
+    face_confidence_score: Optional[float] = None
+    face_samples_count:    Optional[int]   = None
+
+
 class SaveSessionRequest(BaseModel):
     user_id:          str
-    role:             Optional[str]   = "the position"
-    difficulty:       Optional[str]   = "Mid"
-    interview_type:   Optional[str]   = "full"
-    overall_score:    Optional[float] = None
-    duration_seconds: Optional[int]   = 0
-    summary:          Optional[str]   = None
-    top_strength:     Optional[str]   = None
-    top_improvement:  Optional[str]   = None
-    answers:          List[AnswerIn]  = []
+    role:             Optional[str]        = "the position"
+    difficulty:       Optional[str]        = "Mid"
+    interview_type:   Optional[str]        = "full"
+    overall_score:    Optional[float]      = None
+    duration_seconds: Optional[int]        = 0
+    summary:          Optional[str]        = None
+    top_strength:     Optional[str]        = None
+    top_improvement:  Optional[str]        = None
+    answers:          List[AnswerIn]       = []
+    language:         Optional[str]        = "en-US"
+    company_name:     Optional[str]        = None
+    candidate_name:   Optional[str]        = None
+    ai_score:         Optional[float]      = None
+    ai_verdict:       Optional[str]        = None
+    face_metrics:     Optional[FaceMetricsIn] = None
 
 
 @app.post("/sessions", status_code=201)
 def create_session(req: SaveSessionRequest):
     try:
         upsert_user(req.user_id)
+        fm = req.face_metrics or FaceMetricsIn()
         session_id = save_session(
-            user_id          = req.user_id,
-            role             = req.role,
-            difficulty       = req.difficulty,
-            interview_type   = req.interview_type,
-            overall_score    = req.overall_score,
-            duration_seconds = req.duration_seconds,
-            summary          = req.summary,
-            top_strength     = req.top_strength,
-            top_improvement  = req.top_improvement,
-            answers          = [a.model_dump() for a in req.answers],
+            user_id               = req.user_id,
+            role                  = req.role,
+            difficulty            = req.difficulty,
+            interview_type        = req.interview_type,
+            overall_score         = req.overall_score,
+            duration_seconds      = req.duration_seconds,
+            summary               = req.summary,
+            top_strength          = req.top_strength,
+            top_improvement       = req.top_improvement,
+            answers               = [a.model_dump() for a in req.answers],
+            language              = req.language,
+            company_name          = req.company_name,
+            candidate_name        = req.candidate_name,
+            ai_score              = req.ai_score,
+            ai_verdict            = req.ai_verdict,
+            eye_contact_pct       = fm.eye_contact_pct,
+            head_stability_pct    = fm.head_stability_pct,
+            face_confidence_score = fm.face_confidence_score,
+            face_samples_count    = fm.face_samples_count,
         )
         return {"session_id": session_id}
     except Exception as e:

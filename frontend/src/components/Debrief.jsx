@@ -655,6 +655,7 @@ export default function Debrief({
   const [retryQ, setRetryQ] = useState(null);
   const debriefRef = useRef(null);
   const shareCardRef = useRef(null);
+  const savedToDB = useRef(false);
 
   // AI Scoring Module (client-side scoring)
   const rawAnswers = Array.isArray(qaPairs) ? qaPairs.map((q) => q.answer || "") : [];
@@ -664,9 +665,9 @@ export default function Debrief({
     const fetchDebrief = async () => {
       try {
         const cleanPairs = qaPairs.map(({ question, answer }) => ({
-          question,
-          answer,
-        }));
+          question: question || '',
+          answer: answer || '',
+        })).filter(p => p.question);
         const res = await fetch(`${BACKEND_URL}/debrief`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -689,7 +690,15 @@ export default function Debrief({
           duration: duration || 0,
         });
         // Also persist to PostgreSQL (fire-and-forget — won't block the UI)
-        saveSessionToDB(data, qaPairs, role, difficulty, interviewType, duration);
+        if (!savedToDB.current) {
+          savedToDB.current = true;
+          saveSessionToDB(data, qaPairs, role, difficulty, interviewType, duration, {
+            faceMetrics:   faceMetrics,
+            language:      language,
+            aiScore:       scoring.finalScore,
+            aiVerdict:     scoring.verdict,
+          });
+        }
       } catch {
         setError(
           "Something went wrong generating your feedback. Please try again.",
