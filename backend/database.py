@@ -300,6 +300,21 @@ def get_sessions(user_id: str) -> list:
         conn.close()
 
 
+def delete_session(session_id: int, user_id: str) -> bool:
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM sessions WHERE id = %s AND user_id = %s",
+                (session_id, user_id),
+            )
+            deleted = cur.rowcount > 0
+        conn.commit()
+        return deleted
+    finally:
+        conn.close()
+
+
 def get_session_detail(session_id: int, user_id: str) -> dict | None:
     conn = get_connection()
     try:

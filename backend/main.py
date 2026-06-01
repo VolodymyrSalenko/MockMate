@@ -25,7 +25,7 @@ from helpers import (
     extract_text_from_pdf,
     extract_text_from_docx,
 )
-from database import init_db, upsert_user, save_session, get_sessions, get_session_detail
+from database import init_db, upsert_user, save_session, get_sessions, get_session_detail, delete_session
 from auth import router as auth_router
 
 
@@ -504,6 +504,43 @@ def session_detail(session_id: int, user_id: str):
         return data
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/sessions/{session_id}")
+def remove_session(session_id: int, user_id: str):
+    deleted = delete_session(session_id, user_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"deleted": True}
+
+
+@app.get("/sessions/filler-stats")
+def filler_stats(user_id: str):
+    """Aggregate top filler words across all answers for a user."""
+    try:
+        conn = get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT a.filler_counts
+                    FROM answers a
+                    JOIN sessions s ON a.session_id = s.id
+                    WHERE s.user_id = %s AND a.filler_counts IS NOT NULL
+                """, (user_id,))
+                rows = cur.fetchall()
+        finally:
+            conn.close()
+
+        totals = {}
+        for (fc,) in rows:
+            if fc:
+                for word, count in (fc if isinstance(fc, dict) else {}).items():
+                    totals[word] = totals.get(word, 0) + int(count)
+
+        top = sorted(totals.items(), key=lambda x: x[1], reverse=True)[:8]
+        return {"fillers": [{"word": w, "count": c} for w, c in top]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

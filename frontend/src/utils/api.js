@@ -84,6 +84,35 @@ export async function fetchSessions() {
 }
 
 /**
+ * Fetch aggregated top filler words for the current user.
+ * @returns {Promise<Array<{word: string, count: number}>>}
+ */
+export async function fetchFillerStats() {
+  try {
+    const res = await fetch(`${BACKEND_URL}/sessions/filler-stats?user_id=${getUserId()}`)
+    if (!res.ok) return []
+    const data = await res.json()
+    return data.fillers || []
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Delete a session (and its answers via CASCADE).
+ * @param {number} sessionId
+ * @returns {Promise<boolean>}
+ */
+export async function deleteSession(sessionId) {
+  try {
+    const res = await fetch(`${BACKEND_URL}/sessions/${sessionId}?user_id=${getUserId()}`, {
+      method: 'DELETE',
+    })
+    return res.ok
+  } catch { return false }
+}
+
+/**
  * Fetch one session with full answer detail.
  * @param {number} sessionId
  * @returns {Promise<object|null>}

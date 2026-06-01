@@ -28,7 +28,7 @@ function NavItem({ icon, label, active, collapsed, onClick }) {
   )
 }
 
-function PlanBadge({ plan, collapsed }) {
+function PlanBadge({ plan, collapsed, onUpgradeClick }) {
   if (plan === 'pro') {
     return (
       <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/30 mb-3 ${collapsed ? 'justify-center px-0' : ''}`}>
@@ -40,6 +40,7 @@ function PlanBadge({ plan, collapsed }) {
   if (collapsed) {
     return (
       <button
+        onClick={onUpgradeClick}
         title="Upgrade to Pro"
         className="w-full flex items-center justify-center py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white text-sm transition-all shadow-lg shadow-amber-500/20 mb-3"
       >
@@ -48,14 +49,17 @@ function PlanBadge({ plan, collapsed }) {
     )
   }
   return (
-    <button className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white text-sm font-bold transition-all shadow-lg shadow-amber-500/20 mb-3">
+    <button
+      onClick={onUpgradeClick}
+      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white text-sm font-bold transition-all shadow-lg shadow-amber-500/20 mb-3"
+    >
       <span>👑</span>
       <span>Upgrade to Pro</span>
     </button>
   )
 }
 
-export default function Sidebar({ activeTab, onTab, collapsed, onToggle }) {
+export default function Sidebar({ activeTab, onTab, collapsed, onToggle, onUpgradeClick }) {
   const { user, logout } = useAuth()
   const initial = user?.name?.[0]?.toUpperCase() || 'U'
 
@@ -69,6 +73,22 @@ export default function Sidebar({ activeTab, onTab, collapsed, onToggle }) {
         backdropFilter: 'blur(20px)',
       }}
     >
+      {/* Tab toggle button — sticks out from the right edge of the sidebar */}
+      <button
+        onClick={onToggle}
+        title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        className="absolute top-4 -right-8 w-8 h-8 flex items-center justify-center rounded-r-xl text-slate-400 hover:text-slate-200 transition-colors z-50"
+        style={{
+          background: 'rgba(2,6,23,0.95)',
+          borderTop: '1px solid rgba(51,65,85,0.4)',
+          borderRight: '1px solid rgba(51,65,85,0.4)',
+          borderBottom: '1px solid rgba(51,65,85,0.4)',
+          backdropFilter: 'blur(20px)',
+        }}
+      >
+        <PanelIcon />
+      </button>
+
       {/* Logo */}
       {collapsed ? (
         <div className="flex flex-col items-center py-4 border-b border-slate-700/40">
@@ -90,13 +110,6 @@ export default function Sidebar({ activeTab, onTab, collapsed, onToggle }) {
               <p className="text-slate-600 text-xs">AI Interview Coach</p>
             </div>
           </div>
-          <button
-            onClick={onToggle}
-            title="Collapse sidebar"
-            className="text-slate-500 hover:text-slate-200 transition-colors p-1.5 rounded-lg hover:bg-slate-800/60 flex-shrink-0"
-          >
-            <PanelIcon />
-          </button>
         </div>
       )}
 
@@ -112,7 +125,7 @@ export default function Sidebar({ activeTab, onTab, collapsed, onToggle }) {
 
       {/* Bottom section */}
       <div className={`border-t border-slate-700/40 space-y-2 ${collapsed ? 'p-2' : 'p-3'}`}>
-        <PlanBadge plan={user?.plan} collapsed={collapsed} />
+        <PlanBadge plan={user?.plan} collapsed={collapsed} onUpgradeClick={onUpgradeClick} />
 
         {/* User info */}
         <div className={`flex items-center gap-3 rounded-xl glass border border-slate-700/40 ${collapsed ? 'justify-center p-2' : 'px-3 py-2.5'}`}>
