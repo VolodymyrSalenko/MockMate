@@ -13,8 +13,7 @@ import { saveSession } from "../utils/history";
 import { saveSessionToDB } from '../utils/api'
 import RetryModal from "./RetryModal";
 import { scoreAllAnswers } from "../utils/scoring";
-
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+import { BACKEND_URL } from "../utils/config";
 
 function BgOrbs() {
   return (
