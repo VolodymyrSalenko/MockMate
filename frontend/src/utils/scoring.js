@@ -74,60 +74,146 @@ export function avgArr(arr) {
   return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null
 }
 
+// ── Multilingual scoring data ──────────────────────────────────────────────────
+
+const STAR_GROUPS = {
+  en: {
+    situation: ['situation', 'context'],
+    task:      ['task', 'responsibility'],
+    action:    ['action', 'i decided', 'i did'],
+    result:    ['result', 'outcome', 'impact'],
+  },
+  de: {
+    situation: ['situation'],
+    task:      ['aufgabe'],
+    action:    ['maßnahme', 'ich habe'],
+    result:    ['ergebnis', 'resultat'],
+  },
+  fr: {
+    situation: ['situation'],
+    task:      ['tâche', 'responsabilité'],
+    action:    ['action', "j'ai décidé"],
+    result:    ['résultat', 'impact'],
+  },
+}
+
+const OWNERSHIP_KEYWORDS = {
+  en: ['led', 'owned', 'initiated'],
+  de: ['ich habe geleitet', 'ich war verantwortlich', 'ich habe initiiert'],
+  fr: ["j'ai dirigé", "j'ai initié", "j'étais responsable"],
+}
+
+const FEEDBACK_TEXT = {
+  en: {
+    starPartial: 'Try to cover all parts of STAR: Situation, Task, Action, and Result.',
+    starMissing: 'Your answer would be stronger if you clearly followed the STAR structure.',
+    impact:      'Mention concrete impact or metrics (e.g., percentages, time saved, revenue, users).',
+    tooShort:    'Your answer is quite short. Add more detail about what you did and how you did it.',
+    tooLong:     'Your answer is quite long. Try to be more concise and focus on the most important points.',
+    ownership:   'Highlight your personal ownership: what *you* did, not just what the team did.',
+    noAnswer1:   'You did not really provide an answer. In interviews, try to say something, even if it feels imperfect.',
+    noAnswer2:   'Use the STAR structure (Situation, Task, Action, Result) to organize your thoughts.',
+  },
+  de: {
+    starPartial: 'Versuchen Sie, alle Teile von STAR abzudecken: Situation, Aufgabe, Aktion und Resultat.',
+    starMissing: 'Ihre Antwort wäre stärker, wenn Sie klar der STAR-Struktur folgen würden.',
+    impact:      'Nennen Sie konkrete Auswirkungen oder Kennzahlen (z. B. Prozentsätze, eingesparte Zeit, Umsatz, Nutzer).',
+    tooShort:    'Ihre Antwort ist recht kurz. Fügen Sie mehr Details hinzu, was Sie getan haben und wie Sie es getan haben.',
+    tooLong:     'Ihre Antwort ist recht lang. Versuchen Sie, prägnanter zu sein und sich auf die wichtigsten Punkte zu konzentrieren.',
+    ownership:   'Betonen Sie Ihre persönliche Verantwortung: was *Sie* getan haben, nicht nur das Team.',
+    noAnswer1:   'Sie haben im Grunde keine Antwort gegeben. Versuchen Sie im Interview, trotzdem etwas zu sagen, auch wenn es nicht perfekt ist.',
+    noAnswer2:   'Nutzen Sie die STAR-Struktur (Situation, Aufgabe, Aktion, Resultat), um Ihre Gedanken zu ordnen.',
+  },
+  fr: {
+    starPartial: 'Essayez de couvrir toutes les parties de STAR : Situation, Tâche, Action et Résultat.',
+    starMissing: 'Votre réponse serait plus forte si vous suiviez clairement la structure STAR.',
+    impact:      'Mentionnez un impact concret ou des métriques (par exemple, pourcentages, temps gagné, revenus, utilisateurs).',
+    tooShort:    'Votre réponse est assez courte. Ajoutez plus de détails sur ce que vous avez fait et comment vous l\'avez fait.',
+    tooLong:     'Votre réponse est assez longue. Essayez d\'être plus concis et de vous concentrer sur les points les plus importants.',
+    ownership:   'Mettez en avant votre responsabilité personnelle : ce que *vous* avez fait, pas seulement l\'équipe.',
+    noAnswer1:   'Vous n\'avez pas vraiment fourni de réponse. En entretien, essayez de dire quelque chose, même si ce n\'est pas parfait.',
+    noAnswer2:   'Utilisez la structure STAR (Situation, Tâche, Action, Résultat) pour organiser vos idées.',
+  },
+}
+
+function detectLanguage(lower) {
+  const scores = { en: 0, de: 0, fr: 0 }
+  for (const [lang, groups] of Object.entries(STAR_GROUPS)) {
+    for (const list of Object.values(groups)) {
+      list.forEach(kw => { if (lower.includes(kw)) scores[lang]++ })
+    }
+  }
+  for (const [lang, list] of Object.entries(OWNERSHIP_KEYWORDS)) {
+    list.forEach(kw => { if (lower.includes(kw)) scores[lang]++ })
+  }
+  return scores.de > scores.en && scores.de >= scores.fr ? 'de'
+       : scores.fr > scores.en                           ? 'fr'
+       : 'en'
+}
+
+function hasAny(lower, list) {
+  return list.some(kw => lower.includes(kw))
+}
+
 // ── Client-side AI answer scoring ─────────────────────────────────────────────
 // Returns { finalScore (0-100), verdict, detailed: [{score (0-20), tips}] }
-export function scoreAllAnswers(answers) {
+export function scoreAllAnswers(answers, selectedLanguage = null) {
   if (!answers || answers.length === 0) {
     return { finalScore: 0, verdict: 'No answers to score', detailed: [] }
   }
 
-  const STAR_KEYWORDS  = ['situation', 'task', 'action', 'result', 'achieved', 'implemented', 'led', 'delivered']
-  const VAGUE_PHRASES  = ['i think', 'maybe', 'sort of', 'kind of', 'i guess', 'um', 'uh']
-  const MAX_PER_ANSWER = 20
-
   const detailed = answers.map(answer => {
-    const text  = (answer || '').trim().toLowerCase()
-    const words = text.split(/\s+/).filter(Boolean)
-    const wc    = words.length
+    const text = (answer || '').trim()
+
+    if (!text) {
+      const lang = selectedLanguage && FEEDBACK_TEXT[selectedLanguage] ? selectedLanguage : 'en'
+      const t = FEEDBACK_TEXT[lang]
+      return { score: 0, tips: [t.noAnswer1, t.noAnswer2] }
+    }
+
+    let score = 10
     const tips  = []
-    let score   = 0
+    const lower = text.toLowerCase()
 
-    // Length (0-8 pts)
-    if (wc >= 80)       score += 8
-    else if (wc >= 50)  score += 6
-    else if (wc >= 30)  score += 4
-    else if (wc >= 10)  score += 2
-    else                tips.push('Give a more detailed answer (aim for 50+ words).')
+    const detected   = detectLanguage(lower)
+    const lang       = selectedLanguage && FEEDBACK_TEXT[selectedLanguage] ? selectedLanguage : detected
+    const starGroups = STAR_GROUPS[lang]     || STAR_GROUPS.en
+    const t          = FEEDBACK_TEXT[lang]   || FEEDBACK_TEXT.en
 
-    // STAR keywords (0-7 pts)
-    const starHits = STAR_KEYWORDS.filter(k => text.includes(k)).length
-    score += Math.min(starHits * 1, 7)
-    if (starHits < 2) tips.push('Try using the STAR method: Situation, Task, Action, Result.')
+    // STAR structure
+    const starCount = ['situation', 'task', 'action', 'result'].filter(
+      k => hasAny(lower, starGroups[k])
+    ).length
+    if      (starCount >= 3) score += 4
+    else if (starCount === 2) { score += 2; tips.push(t.starPartial) }
+    else                       tips.push(t.starMissing)
 
-    // Specificity — numbers/percentages (0-3 pts)
-    const hasNumbers = /\d/.test(text)
-    if (hasNumbers) { score += 3 }
-    else            { tips.push('Add specific numbers or outcomes to strengthen your answer.') }
+    // Impact / metrics
+    if (/\d/.test(text) || lower.includes('%') || lower.includes('increase') || lower.includes('decrease')) {
+      score += 3
+    } else {
+      tips.push(t.impact)
+    }
 
-    // Vague language penalty
-    const vagueHits = VAGUE_PHRASES.filter(p => text.includes(p)).length
-    score = Math.max(0, score - vagueHits)
-    if (vagueHits >= 2) tips.push('Avoid vague phrases like "I think" or "sort of" — be direct and confident.')
+    // Length
+    const wc = text.split(/\s+/).length
+    if      (wc < 60)  { tips.push(t.tooShort); score-- }
+    else if (wc > 220) { tips.push(t.tooLong);  score-- }
 
-    if (tips.length === 0) tips.push('Good answer — clear, specific, and well-structured.')
+    // Ownership
+    if (hasAny(lower, OWNERSHIP_KEYWORDS[lang] || OWNERSHIP_KEYWORDS.en)) {
+      score += 2
+    } else {
+      tips.push(t.ownership)
+    }
 
-    return { score: Math.min(score, MAX_PER_ANSWER), tips }
+    return { score: Math.max(0, Math.min(20, score)), tips }
   })
 
-  const total      = detailed.reduce((sum, d) => sum + d.score, 0)
-  const maxPossible = detailed.length * MAX_PER_ANSWER
-  const finalScore = Math.round((total / maxPossible) * 100)
+  const avgScore   = detailed.reduce((sum, d) => sum + d.score, 0) / detailed.length
+  const finalScore = Math.round((avgScore / 20) * 100)
 
-  const verdict =
-    finalScore >= 80 ? 'Excellent — interview-ready performance!' :
-    finalScore >= 60 ? 'Good — a few areas to sharpen.' :
-    finalScore >= 40 ? 'Developing — keep practising structure and specifics.' :
-                       'Needs work — focus on detail and the STAR method.'
+  const verdict = finalScore >= 55 ? 'Accepted — you got the job!' : 'Rejected — keep practicing'
 
   return { finalScore, verdict, detailed }
 }

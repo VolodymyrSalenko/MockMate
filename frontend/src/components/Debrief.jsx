@@ -657,8 +657,11 @@ export default function Debrief({
   const savedToDB = useRef(false);
 
   // AI Scoring Module (client-side scoring)
-  const rawAnswers = Array.isArray(qaPairs) ? qaPairs.map((q) => q.answer || "") : [];
-  const scoring = scoreAllAnswers(rawAnswers);
+  const selectedLanguage = (language || "en-US").slice(0, 2);
+  const rawAnswers = Array.isArray(qaPairs)
+    ? qaPairs.map((q) => q.answer || "")
+    : [];
+  const scoring = scoreAllAnswers(rawAnswers, selectedLanguage);
 
   useEffect(() => {
     const fetchDebrief = async () => {
@@ -896,7 +899,9 @@ export default function Debrief({
             AI Score: {scoring.finalScore}/100
           </h2>
 
-          <p className="text-lg font-semibold text-emerald-400 mb-6">
+          <p className={scoring.verdict.startsWith("Accepted")
+            ? "text-lg font-semibold text-emerald-400 mb-6"
+            : "text-lg font-semibold text-red-500 mb-6"}>
             {scoring.verdict}
           </p>
 
