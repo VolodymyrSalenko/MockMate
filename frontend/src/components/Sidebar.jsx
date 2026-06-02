@@ -55,8 +55,9 @@ export default function Sidebar({ activeTab, onTab, collapsed, onToggle, onUpgra
       className="fixed left-0 top-0 bottom-0 flex flex-col z-40 transition-all duration-300"
       style={{
         width: collapsed ? '4rem' : '15rem',
-        background: theme === 'dark' ? 'rgba(2,6,23,0.95)' : 'rgba(255,255,255,0.98)',
-        borderRight: theme === 'dark' ? '1px solid rgba(51,65,85,0.4)' : '1px solid rgba(226,232,240,0.8)',
+        background: theme === 'dark' ? 'rgba(2,6,23,0.95)' : 'rgba(253,248,240,0.98)',
+        borderRight: theme === 'dark' ? '1px solid rgba(51,65,85,0.4)' : '1px solid rgba(210,195,170,0.7)',
+        boxShadow: theme === 'dark' ? 'none' : '2px 0 12px rgba(180,140,80,0.08)',
         backdropFilter: 'blur(20px)',
       }}
     >
@@ -66,10 +67,10 @@ export default function Sidebar({ activeTab, onTab, collapsed, onToggle, onUpgra
         title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         className="absolute top-4 -right-8 w-8 h-8 flex items-center justify-center rounded-r-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors z-50"
         style={{
-          background: theme === 'dark' ? 'rgba(2,6,23,0.95)' : 'rgba(255,255,255,0.98)',
-          borderTop: theme === 'dark' ? '1px solid rgba(51,65,85,0.4)' : '1px solid rgba(226,232,240,0.8)',
-          borderRight: theme === 'dark' ? '1px solid rgba(51,65,85,0.4)' : '1px solid rgba(226,232,240,0.8)',
-          borderBottom: theme === 'dark' ? '1px solid rgba(51,65,85,0.4)' : '1px solid rgba(226,232,240,0.8)',
+          background: theme === 'dark' ? 'rgba(2,6,23,0.95)' : 'rgba(253,248,240,0.98)',
+          borderTop: theme === 'dark' ? '1px solid rgba(51,65,85,0.4)' : '1px solid rgba(210,195,170,0.7)',
+          borderRight: theme === 'dark' ? '1px solid rgba(51,65,85,0.4)' : '1px solid rgba(210,195,170,0.7)',
+          borderBottom: theme === 'dark' ? '1px solid rgba(51,65,85,0.4)' : '1px solid rgba(210,195,170,0.7)',
           backdropFilter: 'blur(20px)',
         }}
       >
@@ -79,15 +80,12 @@ export default function Sidebar({ activeTab, onTab, collapsed, onToggle, onUpgra
       {/* Logo */}
       {collapsed ? (
         <div className="flex flex-col items-center py-4 border-b border-slate-200 dark:border-slate-700/40">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-500/30">
-            <span className="text-white text-sm font-black">M</span>
-          </div>
+          <h1 className="text-sm font-black leading-none">
+            <span className="gradient-text">M</span>
+          </h1>
         </div>
       ) : (
-        <div className="px-4 py-4 border-b border-slate-200 dark:border-slate-700/40 flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-500/30 flex-shrink-0">
-            <span className="text-white text-sm font-black">M</span>
-          </div>
+        <div className="px-4 py-4 border-b border-slate-200 dark:border-slate-700/40 flex items-center">
           <div>
             <h1 className="text-lg font-black leading-none">
               <span className="text-slate-900 dark:text-white">Mock</span>
@@ -118,7 +116,7 @@ export default function Sidebar({ activeTab, onTab, collapsed, onToggle, onUpgra
           {menuOpen && (
             <div
               className="absolute bottom-full mb-2 left-0 right-0 rounded-2xl overflow-hidden shadow-2xl border border-slate-200 dark:border-slate-700/50 z-50"
-              style={{ background: theme === 'dark' ? 'rgba(15,23,42,0.98)' : 'rgba(255,255,255,0.98)', backdropFilter: 'blur(20px)' }}
+              style={{ background: theme === 'dark' ? 'rgba(15,23,42,0.98)' : 'rgba(253,248,240,0.98)', backdropFilter: 'blur(20px)', boxShadow: theme === 'dark' ? '' : '0 4px 20px rgba(180,140,80,0.12), 0 1px 4px rgba(180,140,80,0.08)' }}
             >
               <button
                 onClick={() => { setMenuOpen(false); onTab('settings') }}
