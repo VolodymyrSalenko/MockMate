@@ -100,6 +100,50 @@ Category guidelines:
 - Data Structures & Algorithms: Classic DSA problems, complexity analysis, problem-solving
 - Communication: Stakeholder management, presenting ideas, cross-functional work"""
 
+CV_PARSE_PROMPT = """You are a CV/resume parser. Extract structured information from the following CV text.
+
+Return ONLY valid JSON matching this exact structure (no preamble, no markdown, no backticks):
+{{
+  "name": "full name or null",
+  "title": "current job title or professional title or null",
+  "profile": "professional summary paragraph if present verbatim, or null",
+  "contact": {{
+    "email": "email address or null",
+    "phone": "phone number or null",
+    "linkedin": "linkedin URL or username or null",
+    "location": "city and country or null"
+  }},
+  "skills": ["skill1", "skill2"],
+  "experience": [
+    {{
+      "title": "job title",
+      "company": "company name",
+      "duration": "date range e.g. Jan 2020 – Mar 2023",
+      "bullets": ["key responsibility or achievement (include metrics if present)"]
+    }}
+  ],
+  "education": [
+    {{
+      "degree": "degree name and field of study",
+      "institution": "university or school name",
+      "year": "graduation year or date range",
+      "grade": "GPA or grade classification if mentioned, otherwise null"
+    }}
+  ],
+  "languages": ["English (Native)", "French (Conversational)"],
+  "certifications": ["certification name and issuer"]
+}}
+
+CV text:
+{cv_text}
+
+Rules:
+- Include ALL experience and education entries found
+- Keep bullet points concise but preserve any metrics or achievements
+- If a section is absent, use null for strings or [] for arrays
+- Do not invent or assume any information not present in the CV"""
+
+
 DEBRIEF_PROMPT = """Evaluate these interview answers.
 
 {language_instruction}

@@ -82,3 +82,36 @@ export async function fetchSessionDetail(sessionId) {
     return null
   }
 }
+
+/**
+ * Fetch the stored CV profile for the current user.
+ * Returns null if none exists yet.
+ * @returns {Promise<{parsed: object, filename: string, raw_text: string, updated_at: string}|null>}
+ */
+export async function fetchCVProfile() {
+  try {
+    const res = await fetch(`${BACKEND_URL}/cv-profile?user_id=${getUserId()}`)
+    if (res.status === 404) return null
+    if (!res.ok) return null
+    return await res.json()
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Upload a CV file, parse it with AI, and store it for the current user.
+ * @param {File} file
+ * @returns {Promise<{parsed: object, filename: string}>}
+ */
+export async function uploadCVProfile(file) {
+  const form = new FormData()
+  form.append('user_id', getUserId())
+  form.append('file', file)
+  const res = await fetch(`${BACKEND_URL}/cv-profile`, { method: 'POST', body: form })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail || 'Upload failed')
+  }
+  return await res.json()
+}

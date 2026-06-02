@@ -1,6 +1,6 @@
 import os
 import httpx
-from fastapi import FastAPI, HTTPException, UploadFile, File, Request
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
@@ -15,6 +15,7 @@ from prompts import (
     DEBRIEF_PROMPT,
     INTERVIEW_TYPE_PROMPTS,
     QUESTION_BANK_PROMPT,
+    CV_PARSE_PROMPT,
     language_instruction,
 )
 from helpers import (
@@ -25,7 +26,7 @@ from helpers import (
     extract_text_from_pdf,
     extract_text_from_docx,
 )
-from database import init_db, upsert_user, save_session, get_sessions, get_session_detail
+from database import init_db, upsert_user, save_session, get_sessions, get_session_detail, save_cv_profile, get_cv_profile
 
 
 load_dotenv()
@@ -350,6 +351,57 @@ async def upload_recording(file: UploadFile = File(...)):
     with open(file_path, "wb") as f:
         f.write(content)
     return {"message": "Recording saved successfully", "filename": filename, "path": file_path}
+
+
+@app.post("/cv-profile")
+async def upload_cv_profile(user_id: str = Form(...), file: UploadFile = File(...)):
+    filename = file.filename or ""
+    fname_lower = filename.lower()
+    file_bytes = await file.read()
+
+    try:
+        if fname_lower.endswith(".pdf"):
+            raw_text = extract_text_from_pdf(file_bytes)
+        elif fname_lower.endswith(".docx"):
+            raw_text = extract_text_from_docx(file_bytes)
+        elif fname_lower.endswith(".txt"):
+            raw_text = file_bytes.decode("utf-8", errors="ignore")
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported file type. Use PDF, DOCX, or TXT.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read file: {str(e)}")
+
+    if not raw_text.strip():
+        raise HTTPException(status_code=400, detail="Could not extract text from the file.")
+
+    # Limit text length before sending to AI (avoid token overflow)
+    words = raw_text.split()
+    cv_text_trimmed = " ".join(words[:1200])
+
+    try:
+        prompt = CV_PARSE_PROMPT.format(cv_text=cv_text_trimmed)
+        raw = chat(client, MODEL, [{"role": "user", "content": prompt}], max_tokens=2000)
+        parsed = extract_json(raw)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse CV: {str(e)}")
+
+    try:
+        upsert_user(user_id)
+        save_cv_profile(user_id, filename, raw_text, parsed)
+    except Exception:
+        pass  # DB save failure should not block the response
+
+    return {"parsed": parsed, "filename": filename}
+
+
+@app.get("/cv-profile")
+def get_cv_profile_endpoint(user_id: str):
+    profile = get_cv_profile(user_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="No CV profile found")
+    return profile
 
 
 @app.post("/debrief")

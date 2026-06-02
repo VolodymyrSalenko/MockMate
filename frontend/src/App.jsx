@@ -3,6 +3,7 @@ import Landing from './components/Landing'
 import Interview from './components/Interview'
 import Debrief from './components/Debrief'
 import Dashboard from './components/Dashboard'
+import CVProfile from './components/CVProfile'
 
 // ── Top navigation (shown on landing + dashboard, hidden during interview/debrief)
 function TopNav({ activeTab, onTab }) {
@@ -12,6 +13,7 @@ function TopNav({ activeTab, onTab }) {
         {[
           { key: 'landing',   label: '🎙 Practice' },
           { key: 'dashboard', label: '📊 Dashboard' },
+          { key: 'cv',        label: '📄 My CV' },
         ].map(t => (
           <button
             key={t.key}
@@ -64,8 +66,8 @@ export default function App() {
     setView('landing')
   }
 
-  // Show top nav only on landing and dashboard tabs
-  const showNav = view === 'landing' || view === 'dashboard'
+  // Show top nav only on landing, dashboard and cv tabs
+  const showNav = view === 'landing' || view === 'dashboard' || view === 'cv'
 
   return (
     <>
@@ -75,6 +77,7 @@ export default function App() {
       <div className={showNav ? 'pt-16' : ''}>
         {view === 'landing' && <Landing onStart={handleStart} />}
         {view === 'dashboard' && <Dashboard />}
+        {view === 'cv' && <CVProfile />}
         {view === 'interview' && sessionData && (
           <Interview sessionData={sessionData} onComplete={handleComplete} />
         )}

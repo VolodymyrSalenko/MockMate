@@ -1,3 +1,4 @@
+import json
 import os
 import psycopg
 from dotenv import load_dotenv
@@ -108,8 +109,19 @@ def create_tables():
                 )
             """)
 
+            # -- cv_profiles (one CV per user) --------------------------------
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS cv_profiles (
+                    user_id    UUID PRIMARY KEY REFERENCES users(id),
+                    filename   TEXT,
+                    raw_text   TEXT,
+                    parsed     TEXT,
+                    updated_at TIMESTAMP DEFAULT NOW()
+                )
+            """)
+
         conn.commit()
-        print("  ✅ tables ready (users, sessions, answers)")
+        print("  ✅ tables ready (users, sessions, answers, cv_profiles)")
     finally:
         conn.close()
 
@@ -255,6 +267,50 @@ def get_session_detail(session_id: int, user_id: str) -> dict | None:
             session["answers"] = [dict(zip(a_cols, r)) for r in cur.fetchall()]
 
         return session
+    finally:
+        conn.close()
+
+
+# ── CV Profile ────────────────────────────────────────────────────────────────
+
+def save_cv_profile(user_id: str, filename: str, raw_text: str, parsed: dict):
+    """Upsert CV profile for a user — replaces any previous CV."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO cv_profiles (user_id, filename, raw_text, parsed, updated_at)
+                VALUES (%s, %s, %s, %s, NOW())
+                ON CONFLICT (user_id) DO UPDATE
+                    SET filename   = EXCLUDED.filename,
+                        raw_text   = EXCLUDED.raw_text,
+                        parsed     = EXCLUDED.parsed,
+                        updated_at = NOW()
+            """, (user_id, filename, raw_text, json.dumps(parsed)))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_cv_profile(user_id: str) -> dict | None:
+    """Return the stored CV profile for a user, or None if not found."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT filename, raw_text, parsed, updated_at
+                FROM   cv_profiles
+                WHERE  user_id = %s
+            """, (user_id,))
+            row = cur.fetchone()
+            if not row:
+                return None
+            return {
+                "filename":   row[0],
+                "raw_text":   row[1],
+                "parsed":     json.loads(row[2]) if row[2] else {},
+                "updated_at": row[3].isoformat() if row[3] else None,
+            }
     finally:
         conn.close()
 
