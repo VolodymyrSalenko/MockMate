@@ -15,7 +15,7 @@ import ErrorBoundary from './components/ErrorBoundary'
 function AppInner() {
   const { user, loading, refreshUser } = useAuth()
 
-  const [view,             setView]             = useState('dashboard')
+  const [view,             setView]             = useState('landing')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [showProModal,     setShowProModal]     = useState(false)
   const [sessionData,      setSessionData]      = useState(null)
