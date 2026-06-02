@@ -39,6 +39,16 @@ REQUIRED_ENV = ["OPENROUTER_API_KEY", "JWT_SECRET", "DATABASE_URL"]
 OPTIONAL_ENV = ["SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD", "ELEVENLABS_API_KEY",
                 "API_BASE_URL", "FRONTEND_URL"]
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(auth_router)
+
 @app.on_event("startup")
 def startup():
     missing = [k for k in REQUIRED_ENV if not os.getenv(k)]
@@ -51,16 +61,6 @@ def startup():
         init_db()
     except Exception as e:
         print(f"⚠️  Database init failed (dashboard disabled): {e}")
-
-app.include_router(auth_router)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
