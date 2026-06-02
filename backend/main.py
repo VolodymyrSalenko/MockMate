@@ -26,7 +26,8 @@ from helpers import (
     extract_text_from_pdf,
     extract_text_from_docx,
 )
-from database import init_db, upsert_user, save_session, get_sessions, get_session_detail, save_cv_profile, get_cv_profile
+from database import init_db, upsert_user, save_session, get_sessions, get_session_detail, save_cv_profile, get_cv_profile, delete_session, get_connection
+from auth import router as auth_router
 
 
 load_dotenv()
@@ -34,17 +35,29 @@ load_dotenv()
 app = FastAPI(title="MockMate API")
 
 
+REQUIRED_ENV = ["OPENROUTER_API_KEY", "JWT_SECRET", "DATABASE_URL"]
+OPTIONAL_ENV = ["SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD", "ELEVENLABS_API_KEY",
+                "API_BASE_URL", "FRONTEND_URL"]
+
 @app.on_event("startup")
 def startup():
+    missing = [k for k in REQUIRED_ENV if not os.getenv(k)]
+    if missing:
+        print(f"⛔  Missing required env vars: {', '.join(missing)}")
+    unset_optional = [k for k in OPTIONAL_ENV if not os.getenv(k)]
+    if unset_optional:
+        print(f"ℹ️   Optional env vars not set: {', '.join(unset_optional)}")
     try:
         init_db()
     except Exception as e:
         print(f"⚠️  Database init failed (dashboard disabled): {e}")
 
+app.include_router(auth_router)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "*"],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -413,10 +426,9 @@ async def debrief(req: DebriefRequest):
         [f"Q{i+1}: {pair.question}\nA{i+1}: {pair.answer}" for i, pair in enumerate(req.qa_pairs)]
     )
 
-    prompt = DEBRIEF_PROMPT.format(
-        qa_pairs=qa_text,
-        language_instruction=language_instruction(req.language or "en-US"),
-    )
+    # Use replace() so curly braces in user answers don't break Python's .format()
+    lang = language_instruction(req.language or "en-US")
+    prompt = DEBRIEF_PROMPT.replace("{language_instruction}", lang).replace("{qa_pairs}", qa_text)
     messages = [
         {"role": "system", "content": DEBRIEF_SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
@@ -473,34 +485,57 @@ class AnswerIn(BaseModel):
     analytics:      Optional[Any]   = None
 
 
+class FaceMetricsIn(BaseModel):
+    eye_contact_pct:       Optional[int]   = None
+    head_stability_pct:    Optional[int]   = None
+    face_confidence_score: Optional[float] = None
+    face_samples_count:    Optional[int]   = None
+
+
 class SaveSessionRequest(BaseModel):
     user_id:          str
-    role:             Optional[str]   = "the position"
-    difficulty:       Optional[str]   = "Mid"
-    interview_type:   Optional[str]   = "full"
-    overall_score:    Optional[float] = None
-    duration_seconds: Optional[int]   = 0
-    summary:          Optional[str]   = None
-    top_strength:     Optional[str]   = None
-    top_improvement:  Optional[str]   = None
-    answers:          List[AnswerIn]  = []
+    role:             Optional[str]        = "the position"
+    difficulty:       Optional[str]        = "Mid"
+    interview_type:   Optional[str]        = "full"
+    overall_score:    Optional[float]      = None
+    duration_seconds: Optional[int]        = 0
+    summary:          Optional[str]        = None
+    top_strength:     Optional[str]        = None
+    top_improvement:  Optional[str]        = None
+    answers:          List[AnswerIn]       = []
+    language:         Optional[str]        = "en-US"
+    company_name:     Optional[str]        = None
+    candidate_name:   Optional[str]        = None
+    ai_score:         Optional[float]      = None
+    ai_verdict:       Optional[str]        = None
+    face_metrics:     Optional[FaceMetricsIn] = None
 
 
 @app.post("/sessions", status_code=201)
 def create_session(req: SaveSessionRequest):
     try:
         upsert_user(req.user_id)
+        fm = req.face_metrics or FaceMetricsIn()
         session_id = save_session(
-            user_id          = req.user_id,
-            role             = req.role,
-            difficulty       = req.difficulty,
-            interview_type   = req.interview_type,
-            overall_score    = req.overall_score,
-            duration_seconds = req.duration_seconds,
-            summary          = req.summary,
-            top_strength     = req.top_strength,
-            top_improvement  = req.top_improvement,
-            answers          = [a.model_dump() for a in req.answers],
+            user_id               = req.user_id,
+            role                  = req.role,
+            difficulty            = req.difficulty,
+            interview_type        = req.interview_type,
+            overall_score         = req.overall_score,
+            duration_seconds      = req.duration_seconds,
+            summary               = req.summary,
+            top_strength          = req.top_strength,
+            top_improvement       = req.top_improvement,
+            answers               = [a.model_dump() for a in req.answers],
+            language              = req.language,
+            company_name          = req.company_name,
+            candidate_name        = req.candidate_name,
+            ai_score              = req.ai_score,
+            ai_verdict            = req.ai_verdict,
+            eye_contact_pct       = fm.eye_contact_pct,
+            head_stability_pct    = fm.head_stability_pct,
+            face_confidence_score = fm.face_confidence_score,
+            face_samples_count    = fm.face_samples_count,
         )
         return {"session_id": session_id}
     except Exception as e:
@@ -519,6 +554,35 @@ def list_sessions(user_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/sessions/filler-stats")
+def filler_stats(user_id: str):
+    """Aggregate top filler words across all answers for a user."""
+    try:
+        conn = get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT a.filler_counts
+                    FROM answers a
+                    JOIN sessions s ON a.session_id = s.id
+                    WHERE s.user_id = %s AND a.filler_counts IS NOT NULL
+                """, (user_id,))
+                rows = cur.fetchall()
+        finally:
+            conn.close()
+
+        totals = {}
+        for (fc,) in rows:
+            if fc:
+                for word, count in (fc if isinstance(fc, dict) else {}).items():
+                    totals[word] = totals.get(word, 0) + int(count)
+
+        top = sorted(totals.items(), key=lambda x: x[1], reverse=True)[:8]
+        return {"fillers": [{"word": w, "count": c} for w, c in top]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/sessions/{session_id}")
 def session_detail(session_id: int, user_id: str):
     try:
@@ -532,6 +596,14 @@ def session_detail(session_id: int, user_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/sessions/{session_id}")
+def remove_session(session_id: int, user_id: str):
+    deleted = delete_session(session_id, user_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"deleted": True}
 
 
 @app.get("/health")

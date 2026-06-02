@@ -1,132 +1,133 @@
-// src/utils/scoring.js
+// Shared scoring helpers used across Dashboard, Sessions, and Debrief.
 
+export const SCORE_HIGH = 8
+export const SCORE_MID  = 5
+export const AI_HIGH    = 75
+export const AI_MID     = 50
+
+export function scoreBg(s) {
+  return s >= SCORE_HIGH
+    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+    : s >= SCORE_MID
+    ? 'bg-yellow-400/20 text-yellow-300 border-yellow-400/30'
+    : 'bg-red-500/20 text-red-400 border-red-500/30'
+}
+
+export function scoreColor(s) {
+  return s >= SCORE_HIGH ? 'text-emerald-400' : s >= SCORE_MID ? 'text-yellow-400' : 'text-red-400'
+}
+
+export function scoreHex(s) {
+  return s >= SCORE_HIGH ? '#10b981' : s >= SCORE_MID ? '#f59e0b' : '#ef4444'
+}
+
+export function aiColor(s) {
+  return s >= AI_HIGH ? 'text-emerald-400' : s >= AI_MID ? 'text-yellow-400' : 'text-red-400'
+}
+
+export function aiBg(s) {
+  return s >= AI_HIGH
+    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+    : s >= AI_MID
+    ? 'bg-yellow-400/20 text-yellow-300 border-yellow-400/30'
+    : 'bg-red-500/20 text-red-400 border-red-500/30'
+}
+
+export function formatDate(iso) {
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+export function formatShort(iso) {
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+export function difficultyBadge(d) {
+  const map = {
+    Junior: 'text-sky-400 bg-sky-500/10 border-sky-500/20',
+    Mid:    'text-violet-400 bg-violet-500/10 border-violet-500/20',
+    Senior: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
+  }
+  return map[d] || 'text-slate-400 bg-slate-500/10 border-slate-500/20'
+}
+
+export function typeBadge(t) {
+  const map = {
+    full:       '🎯 Full',
+    behavioral: '🌟 Behavioral',
+    technical:  '⚡ Technical',
+    screening:  '📞 Screening',
+    practice:   '🎓 Practice',
+  }
+  return map[t] || t || '—'
+}
+
+export function langInfo(code) {
+  return (
+    { 'en-US': { flag: '🇬🇧', label: 'English' },
+      'de-DE': { flag: '🇩🇪', label: 'Deutsch' },
+      'fr-FR': { flag: '🇫🇷', label: 'Français' } }[code]
+    || { flag: '🌐', label: code }
+  )
+}
+
+export function avgArr(arr) {
+  return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null
+}
+
+// ── Client-side AI answer scoring ─────────────────────────────────────────────
+// Returns { finalScore (0-100), verdict, detailed: [{score (0-20), tips}] }
 export function scoreAllAnswers(answers) {
-  // Ensure we always have an array
-  const safeAnswers = Array.isArray(answers) ? answers : [];
-
-  const detailed = safeAnswers.map((answer) => {
-    const text = (answer || "").trim();
-
-    // If no answer was given
-    if (!text) {
-      return {
-        score: 0,
-        tips: [
-          "You did not really provide an answer. In interviews, try to say something, even if it feels imperfect.",
-          "Use the STAR structure (Situation, Task, Action, Result) to organize your thoughts.",
-        ],
-      };
-    }
-
-    let score = 10; // start from a neutral baseline
-    const tips = [];
-    const lower = text.toLowerCase();
-
-    // STAR structure
-    const hasSituation =
-      lower.includes("situation") || lower.includes("context");
-    const hasTask = lower.includes("task") || lower.includes("responsibility");
-    const hasAction =
-      lower.includes("action") ||
-      lower.includes("i decided") ||
-      lower.includes("i did");
-    const hasResult =
-      lower.includes("result") ||
-      lower.includes("outcome") ||
-      lower.includes("impact");
-
-    let starCount = 0;
-    if (hasSituation) starCount++;
-    if (hasTask) starCount++;
-    if (hasAction) starCount++;
-    if (hasResult) starCount++;
-
-    if (starCount >= 3) {
-      score += 4;
-    } else if (starCount === 2) {
-      score += 2;
-      tips.push(
-        "Try to cover all parts of STAR: Situation, Task, Action, and Result.",
-      );
-    } else {
-      tips.push(
-        "Your answer would be stronger if you clearly followed the STAR structure.",
-      );
-    }
-
-    // Impact / metrics
-    const hasNumbers = /\d/.test(text);
-    if (
-      hasNumbers ||
-      lower.includes("%") ||
-      lower.includes("increase") ||
-      lower.includes("decrease")
-    ) {
-      score += 3;
-    } else {
-      tips.push(
-        "Mention concrete impact or metrics (e.g., percentages, time saved, revenue, users).",
-      );
-    }
-
-    // Clarity / length
-    const length = text.split(/\s+/).length;
-    if (length < 60) {
-      tips.push(
-        "Your answer is quite short. Add more detail about what you did and how you did it.",
-      );
-      score -= 1;
-    } else if (length > 220) {
-      tips.push(
-        "Your answer is quite long. Try to be more concise and focus on the most important points.",
-      );
-      score -= 1;
-    }
-
-    // Soft skills / ownership
-    if (
-      lower.includes("i") &&
-      (lower.includes("led") ||
-        lower.includes("owned") ||
-        lower.includes("initiated"))
-    ) {
-      score += 2;
-    } else {
-      tips.push(
-        "Highlight your personal ownership: what *you* did, not just what the team did.",
-      );
-    }
-
-    // Bound score between 0 and 20
-    score = Math.max(0, Math.min(20, score));
-
-    return {
-      score,
-      tips,
-    };
-  });
-
-  // Compute final score (0–100)
-  const totalScore = detailed.reduce((sum, item) => sum + item.score, 0);
-  const count = detailed.length || 1;
-  const avgScore = totalScore / count; // 0–20
-  const finalScore = Math.round((avgScore / 20) * 100); // 0–100
-
-  // Verdict
-  let verdict;
-  if (finalScore >= 80) {
-    verdict = "Strong candidate – likely hire.";
-  } else if (finalScore >= 60) {
-    verdict = "Promising – could hire with some improvements.";
-  } else if (finalScore >= 40) {
-    verdict = "Mixed – needs significant improvement.";
-  } else {
-    verdict = "Not ready yet – keep practicing and refining your stories.";
+  if (!answers || answers.length === 0) {
+    return { finalScore: 0, verdict: 'No answers to score', detailed: [] }
   }
 
-  return {
-    finalScore,
-    verdict,
-    detailed,
-  };
+  const STAR_KEYWORDS  = ['situation', 'task', 'action', 'result', 'achieved', 'implemented', 'led', 'delivered']
+  const VAGUE_PHRASES  = ['i think', 'maybe', 'sort of', 'kind of', 'i guess', 'um', 'uh']
+  const MAX_PER_ANSWER = 20
+
+  const detailed = answers.map(answer => {
+    const text  = (answer || '').trim().toLowerCase()
+    const words = text.split(/\s+/).filter(Boolean)
+    const wc    = words.length
+    const tips  = []
+    let score   = 0
+
+    // Length (0-8 pts)
+    if (wc >= 80)       score += 8
+    else if (wc >= 50)  score += 6
+    else if (wc >= 30)  score += 4
+    else if (wc >= 10)  score += 2
+    else                tips.push('Give a more detailed answer (aim for 50+ words).')
+
+    // STAR keywords (0-7 pts)
+    const starHits = STAR_KEYWORDS.filter(k => text.includes(k)).length
+    score += Math.min(starHits * 1, 7)
+    if (starHits < 2) tips.push('Try using the STAR method: Situation, Task, Action, Result.')
+
+    // Specificity — numbers/percentages (0-3 pts)
+    const hasNumbers = /\d/.test(text)
+    if (hasNumbers) { score += 3 }
+    else            { tips.push('Add specific numbers or outcomes to strengthen your answer.') }
+
+    // Vague language penalty
+    const vagueHits = VAGUE_PHRASES.filter(p => text.includes(p)).length
+    score = Math.max(0, score - vagueHits)
+    if (vagueHits >= 2) tips.push('Avoid vague phrases like "I think" or "sort of" — be direct and confident.')
+
+    if (tips.length === 0) tips.push('Good answer — clear, specific, and well-structured.')
+
+    return { score: Math.min(score, MAX_PER_ANSWER), tips }
+  })
+
+  const total      = detailed.reduce((sum, d) => sum + d.score, 0)
+  const maxPossible = detailed.length * MAX_PER_ANSWER
+  const finalScore = Math.round((total / maxPossible) * 100)
+
+  const verdict =
+    finalScore >= 80 ? 'Excellent — interview-ready performance!' :
+    finalScore >= 60 ? 'Good — a few areas to sharpen.' :
+    finalScore >= 40 ? 'Developing — keep practising structure and specifics.' :
+                       'Needs work — focus on detail and the STAR method.'
+
+  return { finalScore, verdict, detailed }
 }
