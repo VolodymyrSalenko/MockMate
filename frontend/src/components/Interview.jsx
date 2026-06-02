@@ -8,21 +8,19 @@ import { analyzeAnswer, getHints, wpmColor, durationLabel } from '../utils/speec
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
 
 const MicIcon = () => (
-  <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-      d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+    <path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/>
+    <path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4M8 22h8"/>
   </svg>
 )
 
 const CameraIcon = ({ on }) => on ? (
-  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-      d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.89L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+    <path d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.89L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
   </svg>
 ) : (
-  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-      d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.89L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2zM3 3l18 18" />
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+    <path d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.89L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2zM3 3l18 18"/>
   </svg>
 )
 
@@ -511,10 +509,6 @@ export default function Interview({ sessionData, onComplete }) {
               📝
             </button>
 
-            {/* Question counter */}
-            <span className="bg-emerald-500/15 text-emerald-400 font-bold text-sm px-3 py-1 rounded-full border border-emerald-500/25">
-              {Math.min(currentQuestionIndex + 1, questions.length)}/{questions.length}
-            </span>
           </div>
         </div>
 
@@ -631,56 +625,38 @@ export default function Interview({ sessionData, onComplete }) {
               <AudioWaveform active={isListening} />
 
               {/* Mic + Camera row */}
-              <div className="flex items-center gap-6 sm:gap-8">
-                {/* Camera button */}
-                <div className="flex flex-col items-center gap-1.5">
-                  <button
-                    onClick={toggleWebcam}
-                    title={webcamStream ? 'Turn off camera' : 'Turn on camera for posture & eye contact analysis'}
-                    className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center transition-all duration-200 select-none
-                      ${webcamStream
-                        ? 'bg-gradient-to-br from-blue-500 to-indigo-500 text-white shadow-xl shadow-blue-500/40 hover:scale-105'
-                        : 'glass-light border border-slate-200 dark:border-slate-700/60 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-500 hover:scale-105'
-                      }`}
-                  >
-                    <CameraIcon on={!!webcamStream} />
-                  </button>
-                  <span className={`text-[10px] font-semibold tracking-wide ${webcamStream ? 'text-blue-400' : 'text-slate-600'}`}>
-                    {webcamStream ? 'Camera On' : 'Camera'}
-                  </span>
-                </div>
+              <div className="flex items-center gap-4 sm:gap-5">
+                {/* Camera — small minimal button */}
+                <button
+                  onClick={toggleWebcam}
+                  title={webcamStream ? 'Turn off camera' : 'Turn on camera'}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 border ${
+                    webcamStream
+                      ? 'bg-blue-500/15 border-blue-500/35 text-blue-400'
+                      : 'bg-slate-100/80 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/50 text-slate-500 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-500'
+                  }`}
+                >
+                  <CameraIcon on={!!webcamStream} />
+                </button>
 
-                {/* Mic button */}
-                <div className="flex flex-col items-center gap-1.5">
-                  <div className="relative w-20 h-20 sm:w-24 sm:h-24 flex items-center justify-center">
-                    <CountdownRing seconds={countdown} total={90} visible={isListening} />
-                    {status === 'idle' && (
-                      <>
-                        <span className="absolute w-20 h-20 sm:w-24 sm:h-24 rounded-full border border-emerald-500/20 animate-ping" style={{ animationDuration: '2s' }} />
-                        <span className="absolute w-24 h-24 sm:w-28 sm:h-28 rounded-full border border-emerald-500/10 animate-ping" style={{ animationDuration: '2.5s' }} />
-                      </>
-                    )}
-                    <button
-                      onMouseDown={handleMicDown} onMouseUp={handleMicUp}
-                      onTouchStart={(e) => { e.preventDefault(); handleMicDown() }}
-                      onTouchEnd={(e)   => { e.preventDefault(); handleMicUp()   }}
-                      disabled={micDisabled}
-                      className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center transition-all duration-200 select-none z-10
-                        ${isListening
-                          ? 'bg-gradient-to-br from-red-500 to-rose-600 text-white btn-recording scale-110'
-                          : isSpeaking || isThinking
-                          ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed'
-                          : 'bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-xl shadow-emerald-500/40 hover:shadow-emerald-500/60 hover:scale-105 animate-idle-ring'
-                        }`}
-                    >
-                      <MicIcon />
-                    </button>
-                  </div>
-                  <span className={`text-[10px] font-semibold tracking-wide ${
-                    isListening ? 'text-red-400' : isSpeaking ? 'text-slate-600' : isThinking ? 'text-yellow-400' : 'text-slate-500'
-                  }`}>
-                    {isListening ? 'Listening...' : isSpeaking ? 'Alex speaking' : isThinking ? 'Thinking...' : 'Hold to speak'}
-                  </span>
+                {/* Mic — primary action */}
+                <div className="relative w-14 h-14 sm:w-16 sm:h-16 flex items-center justify-center">
+                  <CountdownRing seconds={countdown} total={90} visible={isListening} />
+                  <button
+                    onMouseDown={handleMicDown} onMouseUp={handleMicUp}
+                    onTouchStart={(e) => { e.preventDefault(); handleMicDown() }}
+                    onTouchEnd={(e)   => { e.preventDefault(); handleMicUp()   }}
+                    disabled={micDisabled}
+                    className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition-all duration-200 select-none z-10 ${
+                      isListening
+                        ? 'bg-gradient-to-br from-red-500 to-rose-600 text-white btn-recording scale-105'
+                        : isSpeaking || isThinking
+                        ? 'bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/50 text-slate-400 dark:text-slate-600 cursor-not-allowed'
+                        : 'bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/30 hover:scale-105'
+                    }`}
+                  >
+                    <MicIcon />
+                  </button>
                 </div>
               </div>
 
