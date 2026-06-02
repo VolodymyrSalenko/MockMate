@@ -14,24 +14,38 @@ import ProModal     from './components/ProModal'
 import Settings     from './components/Settings'
 import ErrorBoundary from './components/ErrorBoundary'
 
-function ThemeToggle({ belowHeader }) {
+function TopControls({ belowHeader, user, onUpgradeClick }) {
   const { theme, toggleTheme } = useTheme()
+  const top = belowHeader ? 'top-20' : 'top-4'
   return (
-    <button
-      onClick={toggleTheme}
-      title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-      className={`fixed right-4 z-[9999] w-9 h-9 flex items-center justify-center rounded-full glass border border-slate-200 dark:border-slate-700/50 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white shadow-sm hover:shadow-md transition-all ${belowHeader ? 'top-20' : 'top-4'}`}
-    >
-      {theme === 'dark' ? (
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-          <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
-        </svg>
-      ) : (
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-        </svg>
+    <div className={`fixed right-4 z-[9999] flex items-center gap-2 ${top}`}>
+      {user && user.plan !== 'pro' && (
+        <button
+          onClick={onUpgradeClick}
+          className="flex items-center gap-1.5 px-3 h-9 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white text-xs font-bold shadow-lg shadow-amber-500/30 hover:shadow-amber-500/50 transition-all"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+            <path d="M2 19h20M2 19l3-9 5 5 2-8 2 8 5-5 3 9"/>
+          </svg>
+          GET PRO
+        </button>
       )}
-    </button>
+      <button
+        onClick={toggleTheme}
+        title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        className="w-9 h-9 flex items-center justify-center rounded-full glass border border-slate-200 dark:border-slate-700/50 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white shadow-sm hover:shadow-md transition-all"
+      >
+        {theme === 'dark' ? (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+          </svg>
+        ) : (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+        )}
+      </button>
+    </div>
   )
 }
 
@@ -93,13 +107,13 @@ function AppInner() {
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center">
-        <ThemeToggle />
+        <TopControls />
         <div className="w-10 h-10 rounded-full border-4 border-slate-800 border-t-emerald-500 animate-spin" />
       </div>
     )
   }
 
-  if (!user) return <><ThemeToggle /><Auth /></>
+  if (!user) return <><TopControls /><Auth /></>
 
   const handleStart = (data) => {
     setSessionData(data)
@@ -132,7 +146,7 @@ function AppInner() {
 
   return (
     <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950">
-      <ThemeToggle belowHeader={view === 'interview' || view === 'debrief'} />
+      <TopControls belowHeader={view === 'interview' || view === 'debrief'} user={user} onUpgradeClick={() => setShowProModal(true)} />
 
       {sidebarViews.includes(view) && (
         <Sidebar
