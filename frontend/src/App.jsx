@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import { BACKEND_URL } from './utils/config'
 import Auth         from './components/Auth'
 import Sidebar      from './components/Sidebar'
 import Landing      from './components/Landing'
@@ -24,6 +25,11 @@ function AppInner() {
   const [faceMetrics,      setFaceMetrics]      = useState(null)
   const [recording,        setRecording]        = useState(null)
   const [banner,           setBanner]           = useState(null)
+
+  // Wake up the Render backend immediately so it's ready when the user acts
+  useEffect(() => {
+    fetch(`${BACKEND_URL}/health`).catch(() => {})
+  }, [])
 
   // Handle email-change redirect params from auth backend
   useEffect(() => {
