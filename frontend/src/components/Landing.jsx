@@ -1,5 +1,6 @@
-import { useState, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { loadHistory, clearHistory, getProgressData } from '../utils/history'
+import { fetchCVProfile } from '../utils/api'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
@@ -210,12 +211,24 @@ export default function Landing({ onStart }) {
   const [showTemplates, setShowTemplates] = useState(false)
 
   // CV state
-  const [cvFile,     setCvFile]     = useState(null)
-  const [cvText,     setCvText]     = useState(null)
-  const [cvLoading,  setCvLoading]  = useState(false)
-  const [cvError,    setCvError]    = useState('')
-  const [isDragging, setIsDragging] = useState(false)
+  const [cvFile,      setCvFile]      = useState(null)
+  const [cvText,      setCvText]      = useState(null)
+  const [cvLoading,   setCvLoading]   = useState(false)
+  const [cvError,     setCvError]     = useState('')
+  const [cvFromSaved, setCvFromSaved] = useState(false)
+  const [isDragging,  setIsDragging]  = useState(false)
   const fileInputRef = useRef(null)
+
+  // Auto-load stored CV profile on mount
+  useEffect(() => {
+    fetchCVProfile().then(data => {
+      if (data?.raw_text) {
+        setCvFile({ name: data.filename || 'Saved CV' })
+        setCvText(data.raw_text)
+        setCvFromSaved(true)
+      }
+    }).catch(() => {})
+  }, [])
 
   // JD file upload state
   const [jdFile,     setJdFile]     = useState(null)
@@ -234,7 +247,7 @@ export default function Landing({ onStart }) {
     if (!ext.endsWith('.pdf') && !ext.endsWith('.docx') && !ext.endsWith('.txt')) {
       setCvError('Please upload a PDF, DOCX, or TXT file.'); return
     }
-    setCvFile(file); setCvText(null); setCvError(''); setCvLoading(true)
+    setCvFile(file); setCvText(null); setCvError(''); setCvFromSaved(false); setCvLoading(true)
     try {
       const formData = new FormData()
       formData.append('file', file)
@@ -249,7 +262,7 @@ export default function Landing({ onStart }) {
   }
 
   const handleDrop = (e) => { e.preventDefault(); setIsDragging(false); handleFileSelect(e.dataTransfer.files[0]) }
-  const clearCV = () => { setCvFile(null); setCvText(null); setCvError(''); if (fileInputRef.current) fileInputRef.current.value = '' }
+  const clearCV = () => { setCvFile(null); setCvText(null); setCvError(''); setCvFromSaved(false); if (fileInputRef.current) fileInputRef.current.value = '' }
 
   const handleJdFileSelect = async (file) => {
     if (!file) return
@@ -520,7 +533,7 @@ export default function Landing({ onStart }) {
                     <div className="flex-1 min-w-0">
                       <p className="text-slate-200 text-sm font-medium truncate">{cvFile.name}</p>
                       <p className={`text-xs mt-0.5 ${cvLoading ? 'text-slate-400' : cvText ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {cvLoading ? 'Extracting...' : cvText ? '✓ CV parsed — questions personalised' : 'Failed to read'}
+                        {cvLoading ? 'Extracting...' : cvText ? (cvFromSaved ? '✓ Using saved CV — questions personalised' : '✓ CV parsed — questions personalised') : 'Failed to read'}
                       </p>
                     </div>
                     <button onClick={clearCV} className="text-slate-600 hover:text-slate-300 transition"><XIcon /></button>

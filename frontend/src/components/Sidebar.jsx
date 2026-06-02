@@ -130,9 +130,10 @@ export default function Sidebar({ activeTab, onTab, collapsed, onToggle, onUpgra
         {!collapsed && (
           <p className="text-slate-600 text-xs font-bold uppercase tracking-widest px-4 pt-1 pb-1">Menu</p>
         )}
-        <NavItem icon="🎙" label="Practice"  active={activeTab === 'landing'}   collapsed={collapsed} onClick={() => onTab('landing')} />
-        <NavItem icon="📊" label="Dashboard" active={activeTab === 'dashboard'} collapsed={collapsed} onClick={() => onTab('dashboard')} />
-        <NavItem icon="📋" label="Sessions"  active={activeTab === 'sessions'}  collapsed={collapsed} onClick={() => onTab('sessions')} />
+        <NavItem icon="🎙" label="Practice"   active={activeTab === 'landing'}   collapsed={collapsed} onClick={() => onTab('landing')} />
+        <NavItem icon="📊" label="Dashboard"  active={activeTab === 'dashboard'} collapsed={collapsed} onClick={() => onTab('dashboard')} />
+        <NavItem icon="📋" label="Sessions"   active={activeTab === 'sessions'}  collapsed={collapsed} onClick={() => onTab('sessions')} />
+        <NavItem icon="📄" label="CV Profile" active={activeTab === 'cv'}        collapsed={collapsed} onClick={() => onTab('cv')} />
       </nav>
 
       {/* Bottom section */}
