@@ -25,7 +25,7 @@ from helpers import (
     extract_text_from_pdf,
     extract_text_from_docx,
 )
-from database import init_db, upsert_user, save_session, get_sessions, get_session_detail, delete_session
+from database import init_db, upsert_user, save_session, get_sessions, get_session_detail, delete_session, get_connection
 from auth import router as auth_router
 
 
@@ -374,10 +374,9 @@ async def debrief(req: DebriefRequest):
         [f"Q{i+1}: {pair.question}\nA{i+1}: {pair.answer}" for i, pair in enumerate(req.qa_pairs)]
     )
 
-    prompt = DEBRIEF_PROMPT.format(
-        qa_pairs=qa_text,
-        language_instruction=language_instruction(req.language or "en-US"),
-    )
+    # Use replace() so curly braces in user answers don't break Python's .format()
+    lang = language_instruction(req.language or "en-US")
+    prompt = DEBRIEF_PROMPT.replace("{language_instruction}", lang).replace("{qa_pairs}", qa_text)
     messages = [
         {"role": "system", "content": DEBRIEF_SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
@@ -503,29 +502,6 @@ def list_sessions(user_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/sessions/{session_id}")
-def session_detail(session_id: int, user_id: str):
-    try:
-        data = get_session_detail(session_id, user_id)
-        if not data:
-            raise HTTPException(status_code=404, detail="Session not found")
-        if data.get("created_at"):
-            data["created_at"] = data["created_at"].isoformat()
-        return data
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.delete("/sessions/{session_id}")
-def remove_session(session_id: int, user_id: str):
-    deleted = delete_session(session_id, user_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Session not found")
-    return {"deleted": True}
-
-
 @app.get("/sessions/filler-stats")
 def filler_stats(user_id: str):
     """Aggregate top filler words across all answers for a user."""
@@ -553,6 +529,29 @@ def filler_stats(user_id: str):
         return {"fillers": [{"word": w, "count": c} for w, c in top]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/sessions/{session_id}")
+def session_detail(session_id: int, user_id: str):
+    try:
+        data = get_session_detail(session_id, user_id)
+        if not data:
+            raise HTTPException(status_code=404, detail="Session not found")
+        if data.get("created_at"):
+            data["created_at"] = data["created_at"].isoformat()
+        return data
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/sessions/{session_id}")
+def remove_session(session_id: int, user_id: str):
+    deleted = delete_session(session_id, user_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"deleted": True}
 
 
 @app.get("/health")
