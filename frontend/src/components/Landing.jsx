@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { loadHistory, clearHistory, getProgressData } from '../utils/history'
-import { fetchCVProfile } from '../utils/api'
+import { fetchCVProfile, uploadCVProfile } from '../utils/api'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
@@ -254,6 +254,8 @@ export default function Landing({ onStart }) {
       const res = await fetch(`${BACKEND_URL}/extract-cv`, { method: 'POST', body: formData })
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || 'Failed to read CV') }
       setCvText((await res.json()).cv_text)
+      // Save to CV profile in background so it's available next session
+      uploadCVProfile(file).catch(() => {})
     } catch (err) {
       setCvError(err.message || 'Failed to read CV.'); setCvFile(null)
     } finally {
