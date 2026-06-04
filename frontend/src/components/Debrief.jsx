@@ -10,7 +10,7 @@ import {
 } from "recharts";
 import { wpmColor, durationLabel } from "../utils/speechAnalytics";
 import { saveSession } from "../utils/history";
-import { saveSessionToDB } from '../utils/api'
+import { saveSessionToDB } from "../utils/api";
 import RetryModal from "./RetryModal";
 import { scoreAllAnswers } from "../utils/scoring";
 import { BACKEND_URL } from "../utils/config";
@@ -595,42 +595,92 @@ function BodyLanguageCard({ metrics }) {
   const headPct = metrics.headStabilityPct;
   const conf = metrics.confidenceScore;
 
-  const eyeColor = eyePct >= 70 ? "bg-emerald-500" : eyePct >= 40 ? "bg-amber-400" : "bg-red-500";
-  const headColor = headPct >= 70 ? "bg-emerald-500" : headPct >= 40 ? "bg-amber-400" : "bg-red-500";
-  const confColor = conf >= 7 ? "text-emerald-400" : conf >= 4 ? "text-amber-400" : "text-red-400";
-  const tip = eyePct < 50
-    ? `Try to keep your eyes on the camera — you maintained eye contact only ${eyePct}% of the time.`
-    : headPct < 50
-      ? `Work on keeping your head still and upright — steady posture reads as more confident.`
-      : `Strong body language overall — consistent eye contact and stable posture.`;
+  const eyeColor =
+    eyePct >= 70
+      ? "bg-emerald-500"
+      : eyePct >= 40
+        ? "bg-amber-400"
+        : "bg-red-500";
+  const headColor =
+    headPct >= 70
+      ? "bg-emerald-500"
+      : headPct >= 40
+        ? "bg-amber-400"
+        : "bg-red-500";
+  const confColor =
+    conf >= 7
+      ? "text-emerald-400"
+      : conf >= 4
+        ? "text-amber-400"
+        : "text-red-400";
+  const tip =
+    eyePct < 50
+      ? `Try to keep your eyes on the camera — you maintained eye contact only ${eyePct}% of the time.`
+      : headPct < 50
+        ? `Work on keeping your head still and upright — steady posture reads as more confident.`
+        : `Strong body language overall — consistent eye contact and stable posture.`;
 
   return (
-    <div className="glass border border-slate-700/40 rounded-3xl p-6 space-y-4 animate-fade-up" style={{ animationDelay: "0.12s" }}>
+    <div
+      className="glass border border-slate-700/40 rounded-3xl p-6 space-y-4 animate-fade-up"
+      style={{ animationDelay: "0.12s" }}
+    >
       <div className="flex items-center justify-between">
         <p className="text-white font-bold text-lg">👁 Body Language</p>
-        <span className={`text-2xl font-black ${confColor}`}>{conf.toFixed(1)}<span className="text-slate-600 text-sm font-normal">/10</span></span>
+        <span className={`text-2xl font-black ${confColor}`}>
+          {conf.toFixed(1)}
+          <span className="text-slate-600 text-sm font-normal">/10</span>
+        </span>
       </div>
       <div className="space-y-3">
         <div>
           <div className="flex justify-between text-xs mb-1">
             <span className="text-slate-400 font-semibold">Eye Contact</span>
-            <span className={eyePct >= 70 ? "text-emerald-400" : eyePct >= 40 ? "text-amber-400" : "text-red-400"}>{eyePct}%</span>
+            <span
+              className={
+                eyePct >= 70
+                  ? "text-emerald-400"
+                  : eyePct >= 40
+                    ? "text-amber-400"
+                    : "text-red-400"
+              }
+            >
+              {eyePct}%
+            </span>
           </div>
           <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-            <div className={`h-full rounded-full transition-all duration-700 ${eyeColor}`} style={{ width: `${eyePct}%` }} />
+            <div
+              className={`h-full rounded-full transition-all duration-700 ${eyeColor}`}
+              style={{ width: `${eyePct}%` }}
+            />
           </div>
         </div>
         <div>
           <div className="flex justify-between text-xs mb-1">
             <span className="text-slate-400 font-semibold">Head Stability</span>
-            <span className={headPct >= 70 ? "text-emerald-400" : headPct >= 40 ? "text-amber-400" : "text-red-400"}>{headPct}%</span>
+            <span
+              className={
+                headPct >= 70
+                  ? "text-emerald-400"
+                  : headPct >= 40
+                    ? "text-amber-400"
+                    : "text-red-400"
+              }
+            >
+              {headPct}%
+            </span>
           </div>
           <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-            <div className={`h-full rounded-full transition-all duration-700 ${headColor}`} style={{ width: `${headPct}%` }} />
+            <div
+              className={`h-full rounded-full transition-all duration-700 ${headColor}`}
+              style={{ width: `${headPct}%` }}
+            />
           </div>
         </div>
       </div>
-      <p className="text-slate-400 text-sm leading-relaxed border-t border-slate-700/40 pt-3">{tip}</p>
+      <p className="text-slate-400 text-sm leading-relaxed border-t border-slate-700/40 pt-3">
+        {tip}
+      </p>
     </div>
   );
 }
@@ -666,40 +716,73 @@ export default function Debrief({
   useEffect(() => {
     const fetchDebrief = async () => {
       try {
-        const cleanPairs = qaPairs.map(({ question, answer }) => ({
-          question: question || '',
-          answer: answer || '',
-        })).filter(p => p.question);
+        // :one: Clean Q/A pairs and prevent empty payload
+        const cleanPairs = qaPairs
+          .map(({ question, answer }) => ({
+            question: question || "",
+            answer: answer || "",
+          }))
+          .filter((p) => p.question && p.answer);
+
+        if (cleanPairs.length === 0) {
+          setError("No valid answers found.");
+          setLoading(false);
+          return;
+        } // :two: Normalize language (backend expects en-US, de-DE, fr-FR)
+
+        const normalizedLang = language.includes("-")
+          ? language
+          : `${language}-US`; // :three: Ensure role is always a string (backend requires it)
+
+        const safeRole = role || "General";
+
         const res = await fetch(`${BACKEND_URL}/debrief`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ qa_pairs: cleanPairs, role, language }),
+          body: JSON.stringify({
+            qa_pairs: cleanPairs,
+            role: safeRole,
+            language: normalizedLang,
+          }),
         });
+
         if (!res.ok) throw new Error("Failed to get debrief");
+
         const data = await res.json();
+
         if (data.answers) {
           data.answers = data.answers.map((a, i) => ({
             ...a,
             analytics: qaPairs[i]?.analytics || null,
           }));
         }
+
         setDebrief(data);
+
         saveSession({
-          role,
+          role: safeRole,
           difficulty: difficulty || "Mid",
           overall_score: data.overall_score,
           answerCount: data.answers?.length || qaPairs.length,
           duration: duration || 0,
         });
-        // Also persist to PostgreSQL (fire-and-forget — won't block the UI)
+
         if (!savedToDB.current) {
           savedToDB.current = true;
-          saveSessionToDB(data, qaPairs, role, difficulty, interviewType, duration, {
-            faceMetrics:   faceMetrics,
-            language:      language,
-            aiScore:       scoring.finalScore,
-            aiVerdict:     scoring.verdict,
-          });
+          saveSessionToDB(
+            data,
+            qaPairs,
+            safeRole,
+            difficulty,
+            interviewType,
+            duration,
+            {
+              faceMetrics: faceMetrics,
+              language: normalizedLang,
+              aiScore: scoring.finalScore,
+              aiVerdict: scoring.verdict,
+            },
+          );
         }
       } catch {
         setError(
@@ -709,6 +792,7 @@ export default function Debrief({
         setLoading(false);
       }
     };
+
     fetchDebrief();
   }, [qaPairs, role, difficulty, duration]);
 
@@ -899,9 +983,13 @@ export default function Debrief({
             AI Score: {scoring.finalScore}/100
           </h2>
 
-          <p className={scoring.verdict.startsWith("Accepted")
-            ? "text-lg font-semibold text-emerald-400 mb-6"
-            : "text-lg font-semibold text-red-500 mb-6"}>
+          <p
+            className={
+              scoring.verdict.startsWith("Accepted")
+                ? "text-lg font-semibold text-emerald-400 mb-6"
+                : "text-lg font-semibold text-red-500 mb-6"
+            }
+          >
             {scoring.verdict}
           </p>
 
