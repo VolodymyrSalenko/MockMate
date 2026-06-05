@@ -28,6 +28,7 @@ from helpers import (
 )
 from database import init_db, upsert_user, save_session, get_sessions, get_session_detail, save_cv_profile, get_cv_profile, delete_session, get_connection
 from auth import router as auth_router
+from billing import router as billing_router
 
 
 load_dotenv()
@@ -37,7 +38,8 @@ app = FastAPI(title="MockMate API")
 
 REQUIRED_ENV = ["OPENROUTER_API_KEY", "JWT_SECRET", "DATABASE_URL"]
 OPTIONAL_ENV = ["SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD", "ELEVENLABS_API_KEY",
-                "API_BASE_URL", "FRONTEND_URL"]
+                "API_BASE_URL", "FRONTEND_URL",
+                "POLAR_ACCESS_TOKEN", "POLAR_PRODUCT_ID", "POLAR_WEBHOOK_SECRET"]
 
 app.add_middleware(
     CORSMiddleware,
@@ -48,6 +50,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(billing_router)
 
 @app.on_event("startup")
 def startup():

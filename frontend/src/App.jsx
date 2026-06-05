@@ -70,10 +70,15 @@ function AppInner() {
     fetch(`${BACKEND_URL}/health`).catch(() => {})
   }, [])
 
-  // Handle email-change redirect params from auth backend
+  // Handle redirect params from auth backend and Polar checkout
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    if (params.get('email_changed') === 'true') {
+
+    if (params.get('checkout') === 'success') {
+      refreshUser()
+      setBanner({ type: 'success', text: "You're now on Pro! Welcome to MockMate Pro 👑" })
+      window.history.replaceState({}, '', window.location.pathname)
+    } else if (params.get('email_changed') === 'true') {
       refreshUser()
       setBanner({ type: 'success', text: 'Email address updated successfully!' })
       window.history.replaceState({}, '', window.location.pathname)

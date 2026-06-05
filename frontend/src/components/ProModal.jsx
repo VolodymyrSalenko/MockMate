@@ -1,14 +1,47 @@
-// TODO: Fill in the FREE and PRO feature lists after team discussion.
-// The FEATURES array below is intentionally left as a placeholder.
-// Each item: { label: string, free: boolean, pro: boolean }
+import { useState } from 'react'
+import { useAuth } from '../context/AuthContext'
+import { BACKEND_URL } from '../utils/config'
+
 const FEATURES = [
-  // { label: 'Unlimited interviews',   free: false, pro: true },
-  // { label: 'AI scoring',             free: true,  pro: true },
-  // { label: 'Video playback',         free: false, pro: true },
-  // Add more rows here...
+  { label: 'Practice sessions per day',   free: '3',          pro: 'Unlimited' },
+  { label: 'Interview modes',             free: '3 modes',    pro: 'All 5 modes' },
+  { label: 'AI scoring & feedback',       free: true,         pro: true },
+  { label: 'Speech analytics',           free: true,         pro: true },
+  { label: 'Debrief reports',            free: true,         pro: true },
+  { label: 'Job description upload',     free: false,        pro: true },
+  { label: 'Body language analysis',     free: false,        pro: true },
+  { label: 'Video recording & playback', free: false,        pro: true },
+  { label: 'PDF export',                 free: false,        pro: true },
 ]
 
+function FeatureValue({ v }) {
+  if (v === true)  return <span className="text-emerald-400 text-base">✓</span>
+  if (v === false) return <span className="text-slate-700 text-base">—</span>
+  return <span className="text-xs font-semibold text-slate-300">{v}</span>
+}
+
 export default function ProModal({ onClose }) {
+  const { token } = useAuth()
+  const [loading, setLoading] = useState(false)
+  const [error,   setError]   = useState(null)
+
+  const handleUpgrade = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`${BACKEND_URL}/billing/checkout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error('Could not start checkout')
+      const { url } = await res.json()
+      window.location.href = url
+    } catch (e) {
+      setError(e.message || 'Something went wrong')
+      setLoading(false)
+    }
+  }
+
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center p-4"
@@ -35,63 +68,53 @@ export default function ProModal({ onClose }) {
             <span className="text-2xl">👑</span>
           </div>
           <h2 className="text-2xl font-black text-white">MockMate Pro</h2>
-          <p className="text-slate-500 text-sm mt-1.5">The full interview coaching experience</p>
+          <p className="text-slate-400 text-sm mt-1.5">Unlock the full interview coaching experience</p>
+
+          {/* Price */}
+          <div className="mt-4 flex items-baseline justify-center gap-1">
+            <span className="text-4xl font-black text-white">$9</span>
+            <span className="text-slate-500 text-sm font-medium">/ month</span>
+          </div>
+          <p className="text-slate-600 text-xs mt-1">Cancel any time · No hidden fees</p>
         </div>
 
         {/* Feature table */}
-        <div className="px-8 py-6">
-          {FEATURES.length === 0 ? (
-            /* Placeholder shown until the team fills in FEATURES above */
-            <div className="text-center py-8 space-y-3">
-              <span className="text-4xl">🛠</span>
-              <p className="text-slate-300 font-semibold">Feature list coming soon</p>
-              <p className="text-slate-600 text-sm max-w-xs mx-auto">
-                We're finalising what's included in each plan.<br />
-                Check back soon for the full breakdown.
-              </p>
-            </div>
-          ) : (
-            <>
-              {/* Column headers */}
-              <div className="grid grid-cols-[1fr_auto_auto] gap-x-6 mb-3 px-1">
-                <span />
-                <span className="text-slate-500 text-xs font-bold uppercase tracking-wide text-center w-12">Free</span>
-                <span className="text-amber-400 text-xs font-bold uppercase tracking-wide text-center w-12">Pro</span>
+        <div className="px-8 py-5">
+          <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 mb-2 px-1">
+            <span />
+            <span className="text-slate-500 text-xs font-bold uppercase tracking-wide text-center w-16">Free</span>
+            <span className="text-amber-400 text-xs font-bold uppercase tracking-wide text-center w-16">Pro</span>
+          </div>
+          <div className="space-y-0.5">
+            {FEATURES.map((f, i) => (
+              <div
+                key={i}
+                className="grid grid-cols-[1fr_auto_auto] gap-x-4 items-center px-3 py-2 rounded-xl hover:bg-slate-800/40 transition-colors"
+              >
+                <span className="text-slate-300 text-sm">{f.label}</span>
+                <div className="w-16 flex justify-center"><FeatureValue v={f.free} /></div>
+                <div className="w-16 flex justify-center"><FeatureValue v={f.pro} /></div>
               </div>
-              <div className="space-y-1">
-                {FEATURES.map((f, i) => (
-                  <div
-                    key={i}
-                    className="grid grid-cols-[1fr_auto_auto] gap-x-6 items-center px-3 py-2.5 rounded-xl hover:bg-slate-800/40 transition-colors"
-                  >
-                    <span className="text-slate-300 text-sm">{f.label}</span>
-                    <div className="w-12 flex justify-center">
-                      {f.free
-                        ? <span className="text-emerald-400 text-base">✓</span>
-                        : <span className="text-slate-700 text-base">—</span>}
-                    </div>
-                    <div className="w-12 flex justify-center">
-                      {f.pro
-                        ? <span className="text-amber-400 text-base">✓</span>
-                        : <span className="text-slate-700 text-base">—</span>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
+            ))}
+          </div>
         </div>
 
         {/* CTA footer */}
         <div className="px-8 pb-8 space-y-3">
+          {error && (
+            <p className="text-center text-red-400 text-xs">{error}</p>
+          )}
           <button
-            disabled
-            className="w-full py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold text-sm opacity-50 cursor-not-allowed"
+            onClick={handleUpgrade}
+            disabled={loading}
+            className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white font-bold text-sm shadow-lg shadow-amber-500/30 hover:shadow-amber-500/50 hover:scale-[1.02] transition-all disabled:opacity-60 disabled:cursor-not-allowed disabled:scale-100"
           >
-            Coming Soon
+            {loading ? 'Redirecting to checkout…' : 'Upgrade to Pro →'}
           </button>
           <p className="text-center text-slate-700 text-xs">
-            Pricing and availability will be announced shortly.
+            Secure checkout via{' '}
+            <span className="text-slate-500 font-semibold">Polar</span>
+            {' '}· Payments processed by Stripe
           </p>
         </div>
       </div>
