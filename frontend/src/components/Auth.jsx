@@ -26,9 +26,9 @@ function EyeIcon({ open }) {
   )
 }
 
-export default function Auth() {
+export default function Auth({ defaultMode = 'login' }) {
   const { login } = useAuth()
-  const [mode,          setMode]          = useState('login')
+  const [mode,          setMode]          = useState(defaultMode)
   const [name,          setName]          = useState('')
   const [email,         setEmail]         = useState('')
   const [password,        setPassword]        = useState('')
@@ -93,7 +93,7 @@ export default function Auth() {
   // ── "Check your email" screen ─────────────────────────────────────────────
   if (verifyPending) {
     return (
-      <div className="relative min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center px-4 overflow-hidden">
+      <div className="relative min-h-screen dark:bg-slate-950 flex flex-col items-center justify-center px-4 overflow-hidden">
         <BgOrbs />
         <div className="relative z-10 w-full max-w-md text-center">
           <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-500/30">

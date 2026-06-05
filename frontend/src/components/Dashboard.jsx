@@ -6,6 +6,7 @@ import {
 import { fetchSessions, fetchFillerStats, deleteSession } from '../utils/api'
 import { durationLabel } from '../utils/speechAnalytics'
 import { useAuth } from '../context/AuthContext'
+import { useTheme } from '../context/ThemeContext'
 import {
   scoreBg, scoreColor, scoreHex, aiColor, aiBg,
   formatDate, formatShort, difficultyBadge, typeBadge, langInfo, avgArr,
@@ -58,14 +59,6 @@ function calcReadiness(sessions) {
 function readinessColor(r) { return r >= 75 ? 'text-emerald-400' : r >= 50 ? 'text-yellow-400' : 'text-red-400' }
 function readinessLabel(r) { return r >= 75 ? 'Interview Ready' : r >= 50 ? 'Getting There' : r >= 25 ? 'Keep Practising' : 'Just Starting' }
 
-// ── Tooltip style ─────────────────────────────────────────────────────────────
-const TOOLTIP_STYLE = {
-  backgroundColor: 'rgba(15,23,42,0.95)',
-  border: '1px solid rgba(51,65,85,0.6)',
-  borderRadius: 12,
-  backdropFilter: 'blur(12px)',
-}
-
 // ── Stat card ─────────────────────────────────────────────────────────────────
 function StatCard({ icon, label, value, sub, color = 'text-slate-900 dark:text-white' }) {
   return (
@@ -82,6 +75,10 @@ function StatCard({ icon, label, value, sub, color = 'text-slate-900 dark:text-w
 
 // ── Score progression chart (content + AI) ────────────────────────────────────
 function ScoreChart({ sessions }) {
+  const { theme } = useTheme()
+  const tooltipStyle = theme === 'dark'
+    ? { backgroundColor: 'rgba(15,23,42,0.95)', border: '1px solid rgba(51,65,85,0.6)', borderRadius: 12, backdropFilter: 'blur(12px)' }
+    : { backgroundColor: 'rgba(253,248,240,0.97)', border: '1px solid rgba(210,195,170,0.8)', borderRadius: 12 }
   const data = [...sessions]
     .reverse()
     .filter(s => s.overall_score != null)
@@ -113,9 +110,9 @@ function ScoreChart({ sessions }) {
             <YAxis domain={[0, 10]} ticks={[0, 5, 10]} tick={{ fill: '#475569', fontSize: 10 }} axisLine={false} tickLine={false} />
             <ReferenceLine y={7} stroke="rgba(16,185,129,0.15)" strokeDasharray="4 4" />
             <Tooltip
-              contentStyle={TOOLTIP_STYLE}
-              labelStyle={{ color: '#e2e8f0', fontWeight: 700, fontSize: 11 }}
-              itemStyle={{ fontSize: 11 }}
+              contentStyle={tooltipStyle}
+              labelStyle={{ color: theme === 'dark' ? '#e2e8f0' : '#1e293b', fontWeight: 700, fontSize: 11 }}
+              itemStyle={{ fontSize: 11, color: theme === 'dark' ? '#94a3b8' : '#475569' }}
               formatter={(v, name) => [`${v}/10`, name === 'content' ? 'Content Score' : 'AI Score (÷10)']}
             />
             <Line type="monotone" dataKey="content" stroke="#10b981" strokeWidth={2.5}
@@ -399,7 +396,7 @@ export default function Dashboard({ onNavigate }) {
   })).sort((a, b) => { const ord = { Junior:0, Mid:1, Senior:2 }; return ord[a.label]-ord[b.label] })
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 relative overflow-hidden">
+    <div className="min-h-screen dark:bg-slate-950 relative overflow-hidden">
       <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
         <div className="animate-orb absolute top-0 right-0 w-96 h-96 rounded-full bg-emerald-500/6 blur-3xl" />
         <div className="animate-orb-r absolute bottom-0 left-0 w-80 h-80 rounded-full bg-cyan-500/5 blur-3xl" />

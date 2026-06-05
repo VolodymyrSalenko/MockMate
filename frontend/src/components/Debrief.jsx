@@ -14,6 +14,7 @@ import { saveSessionToDB } from "../utils/api";
 import RetryModal from "./RetryModal";
 import { scoreAllAnswers } from "../utils/scoring";
 import { BACKEND_URL } from "../utils/config";
+import { useTheme } from "../context/ThemeContext";
 
 function BgOrbs() {
   return (
@@ -123,7 +124,7 @@ function SpeechAnalyticsPanel({ analytics, questionIndex }) {
       </p>
       <div className="flex flex-wrap gap-2.5">
         {analytics.durationSeconds > 0 && (
-          <div className="flex flex-col items-center bg-slate-900/70 rounded-xl px-3 py-2 min-w-[64px] animate-stat-in">
+          <div className="flex flex-col items-center bg-slate-100/80 dark:bg-slate-900/70 rounded-xl px-3 py-2 min-w-[64px] animate-stat-in">
             <span className="text-slate-700 dark:text-slate-200 font-bold text-sm">
               {durationLabel(analytics.durationSeconds)}
             </span>
@@ -142,7 +143,7 @@ function SpeechAnalyticsPanel({ analytics, questionIndex }) {
           </div>
         )}
         <div
-          className="flex flex-col items-center bg-slate-900/70 rounded-xl px-3 py-2 min-w-[64px] animate-stat-in"
+          className="flex flex-col items-center bg-slate-100/80 dark:bg-slate-900/70 rounded-xl px-3 py-2 min-w-[64px] animate-stat-in"
           style={{ animationDelay: "0.1s" }}
         >
           <span
@@ -372,14 +373,11 @@ function OverallSpeechSummary({ qaPairs, sessionDuration }) {
   );
 }
 
-const TOOLTIP_STYLE = {
-  backgroundColor: "rgba(15,23,42,0.95)",
-  border: "1px solid rgba(51,65,85,0.6)",
-  borderRadius: 12,
-  backdropFilter: "blur(12px)",
-};
-
 function AnswerLengthChart({ answers }) {
+  const { theme } = useTheme();
+  const tooltipStyle = theme === 'dark'
+    ? { backgroundColor: 'rgba(15,23,42,0.95)', border: '1px solid rgba(51,65,85,0.6)', borderRadius: 12, backdropFilter: 'blur(12px)' }
+    : { backgroundColor: 'rgba(253,248,240,0.97)', border: '1px solid rgba(210,195,170,0.8)', borderRadius: 12 };
   const data = answers.map((a, i) => ({
     name: `Q${i + 1}`,
     words: a.analytics?.wordCount || 0,
@@ -410,9 +408,9 @@ function AnswerLengthChart({ answers }) {
             tickLine={false}
           />
           <Tooltip
-            contentStyle={TOOLTIP_STYLE}
-            labelStyle={{ color: "#e2e8f0", fontWeight: 700 }}
-            itemStyle={{ color: "#94a3b8" }}
+            contentStyle={tooltipStyle}
+            labelStyle={{ color: theme === 'dark' ? "#e2e8f0" : "#1e293b", fontWeight: 700 }}
+            itemStyle={{ color: theme === 'dark' ? "#94a3b8" : "#475569" }}
             formatter={(v) => [`${v} words`, "Length"]}
           />
           <Bar dataKey="words" radius={[6, 6, 0, 0]}>
@@ -580,9 +578,9 @@ function ShareCard({ score, role, difficulty, strength, date, cardRef }) {
         }}
       >
         <span style={{ color: "#475569", fontSize: 11 }}>
-          Practise at MockMate
+          Practise at MockMate — AI Interview Coach
         </span>
-        <span style={{ color: "#334155", fontSize: 11 }}>localhost:5173</span>
+        <span style={{ color: "#334155", fontSize: 11 }}>Free to use</span>
       </div>
     </div>
   );
@@ -662,6 +660,7 @@ export default function Debrief({
   recording,
   onRetry,
 }) {
+  const { theme } = useTheme();
   const [debrief, setDebrief] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -772,7 +771,7 @@ export default function Debrief({
       ]);
       const JsPDF = jsPDFModule.jsPDF || jsPDFModule.default;
       const canvas = await html2canvas(debriefRef.current, {
-        backgroundColor: "#020617",
+        backgroundColor: theme === 'dark' ? "#020617" : "#fdf8f0",
         scale: 2,
         useCORS: true,
         logging: false,
@@ -846,7 +845,7 @@ export default function Debrief({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center gap-6 relative overflow-hidden">
+      <div className="min-h-screen dark:bg-slate-950 flex flex-col items-center justify-center gap-6 relative overflow-hidden">
         <BgOrbs />
         <div className="relative z-10 flex flex-col items-center gap-4">
           <div className="relative w-20 h-20">
@@ -866,7 +865,7 @@ export default function Debrief({
 
   if (error) {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center gap-4 px-4 relative overflow-hidden">
+      <div className="min-h-screen dark:bg-slate-950 flex flex-col items-center justify-center gap-4 px-4 relative overflow-hidden">
         <BgOrbs />
         <div className="relative z-10 glass border border-red-500/25 rounded-3xl p-8 text-center max-w-md">
           <p className="text-4xl mb-4">😕</p>
@@ -883,7 +882,7 @@ export default function Debrief({
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 py-6 sm:py-10 px-3 sm:px-4 relative overflow-hidden">
+    <div className="min-h-screen dark:bg-slate-950 py-6 sm:py-10 px-3 sm:px-4 relative overflow-hidden">
       <BgOrbs />
 
       {/* Hidden share card (captured off-screen) */}

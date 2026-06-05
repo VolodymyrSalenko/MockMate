@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import { ThemeProvider, useTheme } from './context/ThemeContext'
 import { BACKEND_URL } from './utils/config'
 import Auth         from './components/Auth'
+import Homepage     from './components/Homepage'
 import Sidebar      from './components/Sidebar'
 import Landing      from './components/Landing'
 import Interview    from './components/Interview'
@@ -55,6 +56,8 @@ function AppInner() {
   const [view,             setView]             = useState('landing')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [showProModal,     setShowProModal]     = useState(false)
+  const [showAuth,         setShowAuth]         = useState(false)
+  const [authMode,         setAuthMode]         = useState('login')
   const [sessionData,      setSessionData]      = useState(null)
   const [qaPairs,          setQaPairs]          = useState([])
   const [duration,         setDuration]         = useState(0)
@@ -113,7 +116,15 @@ function AppInner() {
     )
   }
 
-  if (!user) return <><TopControls /><Auth /></>
+  if (!user) {
+    if (showAuth) return <><TopControls /><Auth defaultMode={authMode} /></>
+    return (
+      <Homepage
+        onLogin={() => { setAuthMode('login'); setShowAuth(true) }}
+        onRegister={() => { setAuthMode('register'); setShowAuth(true) }}
+      />
+    )
+  }
 
   const handleStart = (data) => {
     setSessionData(data)

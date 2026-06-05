@@ -50,7 +50,7 @@ function CountdownRing({ seconds, total = 90, visible }) {
   if (!visible) return null
   return (
     <svg className="absolute inset-0 w-full h-full" viewBox="0 0 96 96" style={{ transform: 'rotate(-90deg)' }}>
-      <circle cx="48" cy="48" r={r} fill="none" stroke="rgba(15,23,42,0.6)" strokeWidth="4" />
+      <circle cx="48" cy="48" r={r} fill="none" stroke="rgba(100,116,139,0.18)" strokeWidth="4" />
       <circle cx="48" cy="48" r={r} fill="none" stroke={color} strokeWidth="4" strokeLinecap="round"
         strokeDasharray={circ.toFixed(2)} strokeDashoffset={offset.toFixed(2)}
         style={{ transition: 'stroke-dashoffset 1s linear, stroke 0.3s', filter: `drop-shadow(0 0 6px ${color})` }} />
@@ -471,7 +471,7 @@ export default function Interview({ sessionData, onComplete }) {
   const progressPct = Math.round((currentQuestionIndex / questions.length) * 100)
 
   return (
-    <div className="h-screen bg-slate-50 dark:bg-slate-950 flex flex-col overflow-hidden relative">
+    <div className="h-screen dark:bg-slate-950 flex flex-col overflow-hidden relative">
       {/* Background orbs */}
       <div className="fixed inset-0 pointer-events-none z-0">
         <div className="animate-orb absolute top-0 right-0 w-72 h-72 rounded-full bg-emerald-500/6 blur-3xl" />

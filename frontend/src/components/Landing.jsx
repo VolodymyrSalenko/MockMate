@@ -3,6 +3,7 @@ import { loadHistory, clearHistory, getProgressData } from '../utils/history'
 import { fetchCVProfile, uploadCVProfile } from '../utils/api'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { IconMic } from '../utils/icons'
+import { useTheme } from '../context/ThemeContext'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
 
@@ -105,6 +106,7 @@ function scoreColor(s) {
 }
 
 function ProgressChart() {
+  const { theme } = useTheme()
   const data = getProgressData()
   if (data.length < 2) return null
   const avg = (data.reduce((s, d) => s + d.score, 0) / data.length).toFixed(1)
@@ -126,9 +128,11 @@ function ProgressChart() {
           <YAxis domain={[0, 10]} tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} ticks={[0, 5, 10]} />
           <ReferenceLine y={7} stroke="rgba(16,185,129,0.2)" strokeDasharray="4 4" />
           <Tooltip
-            contentStyle={{ backgroundColor: 'rgba(15,23,42,0.95)', border: '1px solid rgba(51,65,85,0.5)', borderRadius: 10 }}
-            labelStyle={{ color: '#e2e8f0', fontWeight: 600, fontSize: 11 }}
-            itemStyle={{ color: '#94a3b8', fontSize: 11 }}
+            contentStyle={theme === 'dark'
+              ? { backgroundColor: 'rgba(15,23,42,0.95)', border: '1px solid rgba(51,65,85,0.5)', borderRadius: 10 }
+              : { backgroundColor: 'rgba(253,248,240,0.97)', border: '1px solid rgba(210,195,170,0.8)', borderRadius: 10 }}
+            labelStyle={{ color: theme === 'dark' ? '#e2e8f0' : '#1e293b', fontWeight: 600, fontSize: 11 }}
+            itemStyle={{ color: theme === 'dark' ? '#94a3b8' : '#475569', fontSize: 11 }}
             formatter={(v, _, props) => [`${v}/10 — ${props.payload?.role || ''}`, 'Score']}
           />
           <Line
@@ -356,7 +360,7 @@ export default function Landing({ onStart }) {
   )
 
   return (
-    <div className="relative min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center px-3 sm:px-4 py-10 overflow-hidden">
+    <div className="relative min-h-screen dark:bg-slate-950 flex flex-col items-center justify-center px-3 sm:px-4 py-10 overflow-hidden">
       <BgOrbs />
 
       <div className="relative z-10 w-full max-w-xl">
