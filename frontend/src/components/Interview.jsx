@@ -4,6 +4,7 @@ import { useSTT } from '../hooks/useSTT'
 import { useFaceAnalysis } from '../hooks/useFaceAnalysis'
 import { useMediaRecorder } from '../hooks/useMediaRecorder'
 import { analyzeAnswer, getHints, wpmColor, durationLabel } from '../utils/speechAnalytics'
+import { getStoredToken } from '../context/AuthContext'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
 
@@ -319,7 +320,7 @@ export default function Interview({ sessionData, onComplete }) {
     try {
       const res = await fetch(`${BACKEND_URL}/respond`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getStoredToken()}` },
         body: JSON.stringify({
           history: newHistory,
           user_answer: transcript,

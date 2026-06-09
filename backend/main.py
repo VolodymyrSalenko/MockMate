@@ -1,9 +1,14 @@
 import os
+import re
 import httpx
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
+from fastapi import FastAPI, HTTPException, UploadFile, File, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
-from pydantic import BaseModel
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from rate_limit import limiter
+from auth import router as auth_router, get_current_user
+from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import List, Optional, Any
 from openai import OpenAI
@@ -16,6 +21,7 @@ from prompts import (
     INTERVIEW_TYPE_PROMPTS,
     QUESTION_BANK_PROMPT,
     CV_PARSE_PROMPT,
+    CV_ANALYSIS_PROMPT,
     language_instruction,
 )
 from helpers import (
@@ -27,23 +33,27 @@ from helpers import (
     extract_text_from_docx,
 )
 from database import init_db, upsert_user, save_session, get_sessions, get_session_detail, save_cv_profile, get_cv_profile, delete_session, get_connection
-from auth import router as auth_router
 from billing import router as billing_router
+from admin import router as admin_router
 
 
 load_dotenv()
 
 app = FastAPI(title="MockMate API")
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-REQUIRED_ENV = ["OPENROUTER_API_KEY", "JWT_SECRET", "DATABASE_URL"]
+# JWT_SECRET is enforced at import time in auth.py (raises RuntimeError if missing)
+REQUIRED_ENV = ["OPENROUTER_API_KEY", "DATABASE_URL"]
 OPTIONAL_ENV = ["SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD", "ELEVENLABS_API_KEY",
                 "API_BASE_URL", "FRONTEND_URL",
                 "POLAR_ACCESS_TOKEN", "POLAR_PRODUCT_ID", "POLAR_WEBHOOK_SECRET"]
 
+_frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[_frontend_url, "http://localhost:5173", "http://localhost:5174"],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -51,6 +61,7 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(billing_router)
+app.include_router(admin_router)
 
 @app.on_event("startup")
 def startup():
@@ -80,60 +91,94 @@ DIFFICULTY_INTERVIEW_CONTEXT = {
 
 DIFFICULTY_QUESTION_CONTEXT = {
     "Junior": "Keep questions accessible — focus on fundamentals, learning willingness, and simple real-world examples. Avoid jargon-heavy or highly senior topics.",
-    "Mid":    "Questions should require concrete examples from past experience and moderate technical knowledge.",
+    "Mid":    "Questions should require concrete examples from past experience and moderate technical depth.",
     "Senior": "Questions should probe for senior-level depth: system design, leadership, measurable outcomes, trade-off reasoning, and strategic decisions.",
 }
+
+
+# --- PII helpers ---
+
+_EMAIL_RE = re.compile(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}')
+_PHONE_RE = re.compile(r'(?<!\d)(\+?[\d][\d\s\-\(\)\.]{6,14}\d)(?!\d)')
+
+def strip_contact_pii(text: str) -> str:
+    """Remove email addresses and phone numbers from CV text before sending to LLM."""
+    text = _EMAIL_RE.sub('[email]', text)
+    text = _PHONE_RE.sub('[phone]', text)
+    return text
+
+def check_ai_consent(user_id: str):
+    """Raise 451 if the user has not accepted AI data processing consent."""
+    if not user_id:
+        return
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT ai_consent FROM users WHERE id = %s", (user_id,))
+            row = cur.fetchone()
+    finally:
+        conn.close()
+    # Only block if the user record exists AND consent is explicitly False
+    # NULL = not yet decided (anonymous / newly registered) — blocked too
+    if row is None:
+        return  # anonymous user not in users table — skip check
+    if row[0] is not True:
+        raise HTTPException(
+            status_code=451,
+            detail="AI data processing consent required. Please accept in Settings → AI & Data Processing."
+        )
 
 
 # --- Request models ---
 
 class ParseJDRequest(BaseModel):
-    jd_text: str
-    cv_text: Optional[str] = None
+    jd_text: str = Field(..., max_length=20000)
+    cv_text: Optional[str] = Field(None, max_length=20000)
     difficulty: Optional[str] = "Mid"
-    company_name: Optional[str] = None
+    company_name: Optional[str] = Field(None, max_length=200)
     interview_type: Optional[str] = "full"
     language: Optional[str] = "en-US"
 
 
 class QuestionBankRequest(BaseModel):
-    category: str
+    category: str = Field(..., max_length=200)
     difficulty: Optional[str] = "Mid"
     language: Optional[str] = "en-US"
 
 
 class Message(BaseModel):
     role: str
-    content: str
+    content: str = Field(..., max_length=5000)
 
 
 class RespondRequest(BaseModel):
     history: List[Message]
-    user_answer: str
+    user_answer: str = Field(..., max_length=5000)
     current_question_index: int
     questions: List[str]
-    role: Optional[str] = "the position"
-    cv_summary: Optional[str] = None
+    role: Optional[str] = Field("the position", max_length=200)
+    cv_summary: Optional[str] = Field(None, max_length=5000)
     difficulty: Optional[str] = "Mid"
     allow_followup: Optional[bool] = True
     language: Optional[str] = "en-US"
 
 
 class QAPair(BaseModel):
-    question: str
-    answer: str
+    question: str = Field(..., max_length=2000)
+    answer: str = Field(..., max_length=5000)
 
 
 class DebriefRequest(BaseModel):
     qa_pairs: List[QAPair]
-    role: Optional[str] = "the position"
+    role: Optional[str] = Field("the position", max_length=200)
     language: Optional[str] = "en-US"
 
 
 # --- Endpoints ---
 
 @app.post("/extract-cv")
-async def extract_cv(file: UploadFile = File(...)):
+@limiter.limit("10/minute")
+async def extract_cv(request: Request, file: UploadFile = File(...)):
     filename = file.filename.lower()
     file_bytes = await file.read()
 
@@ -148,8 +193,8 @@ async def extract_cv(file: UploadFile = File(...)):
             raise HTTPException(status_code=400, detail="Unsupported file type. Use PDF, DOCX, or TXT.")
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to read file: {str(e)}")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to read file — try a different format")
 
     if not raw_text.strip():
         raise HTTPException(status_code=400, detail="Could not extract text from the file. Try a different format.")
@@ -159,7 +204,8 @@ async def extract_cv(file: UploadFile = File(...)):
 
 
 @app.post("/extract-text")
-async def extract_text(file: UploadFile = File(...)):
+@limiter.limit("10/minute")
+async def extract_text(request: Request, file: UploadFile = File(...)):
     filename = file.filename.lower()
     file_bytes = await file.read()
     try:
@@ -173,8 +219,8 @@ async def extract_text(file: UploadFile = File(...)):
             raise HTTPException(status_code=400, detail="Unsupported file type. Use PDF, DOCX, or TXT.")
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to read file: {str(e)}")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to read file — try a different format")
 
     if not raw_text.strip():
         raise HTTPException(status_code=400, detail="Could not extract text from the file. Try a different format.")
@@ -184,12 +230,15 @@ async def extract_text(file: UploadFile = File(...)):
 
 
 @app.post("/parse-jd")
-async def parse_jd(req: ParseJDRequest):
+async def parse_jd(req: ParseJDRequest, current_user: dict = Depends(get_current_user)):
     if not req.jd_text.strip():
         raise HTTPException(status_code=400, detail="jd_text is required")
 
+    check_ai_consent(str(current_user["id"]))
+
     if req.cv_text and req.cv_text.strip():
-        cv_section = f"Candidate CV / Resume:\n{req.cv_text.strip()}\n\nUse the candidate's actual experience to personalise the 5 interview questions."
+        safe_cv = strip_contact_pii(req.cv_text.strip())
+        cv_section = f"Candidate CV / Resume:\n{safe_cv}\n\nUse the candidate's actual experience to personalise the interview questions."
     else:
         cv_section = "No CV provided. Generate generic questions based on the job description only."
 
@@ -219,10 +268,10 @@ async def parse_jd(req: ParseJDRequest):
     )
 
     try:
-        raw = chat(client, MODEL, [{"role": "user", "content": prompt}], max_tokens=800)
+        raw = chat(client, MODEL, [{"role": "user", "content": prompt}], max_tokens=1200)
         data = extract_json(raw)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to generate questions — please try again")
 
     role = data.get("role", "the position")
     candidate_name = data.get("candidate_name", "Candidate")
@@ -252,7 +301,8 @@ async def parse_jd(req: ParseJDRequest):
 
 
 @app.post("/question-bank")
-async def question_bank(req: QuestionBankRequest):
+@limiter.limit("10/minute")
+async def question_bank(request: Request, req: QuestionBankRequest, current_user: dict = Depends(get_current_user)):
     if not req.category.strip():
         raise HTTPException(status_code=400, detail="category is required")
 
@@ -269,8 +319,8 @@ async def question_bank(req: QuestionBankRequest):
     try:
         raw = chat(client, MODEL, [{"role": "user", "content": prompt}], max_tokens=800)
         data = extract_json(raw)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to generate questions — please try again")
 
     questions = data.get("questions", [])
     if len(questions) < 5:
@@ -294,7 +344,8 @@ async def question_bank(req: QuestionBankRequest):
 
 
 @app.post("/respond")
-async def respond(req: RespondRequest):
+@limiter.limit("30/minute")
+async def respond(request: Request, req: RespondRequest, current_user: dict = Depends(get_current_user)):
     role = req.role or "the position"
     idx  = req.current_question_index
     difficulty = req.difficulty or "Mid"
@@ -329,8 +380,8 @@ async def respond(req: RespondRequest):
         messages.append({"role": "user", "content": f"[Candidate answer]: {req.user_answer}\n\n[Instruction]: {instruction}"})
         try:
             reply = chat(client, MODEL, messages, max_tokens=80).strip()
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+        except Exception:
+            raise HTTPException(status_code=500, detail="Failed to get interviewer response — please try again")
         return {"reply": reply, "done": False, "followup": True}
 
     if idx < len(req.questions) - 1:
@@ -349,31 +400,39 @@ async def respond(req: RespondRequest):
 
     try:
         reply = chat(client, MODEL, messages, max_tokens=300).strip()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to get interviewer response — please try again")
 
     done = idx >= len(req.questions) - 1
     return {"reply": reply, "done": done, "followup": False}
 
 
+MAX_RECORDING_SIZE = 50 * 1024 * 1024  # 50 MB
+MAX_CV_SIZE        = 10 * 1024 * 1024  # 10 MB
+
 @app.post("/upload-recording")
-async def upload_recording(file: UploadFile = File(...)):
+async def upload_recording(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
     recordings_dir = "recordings"
     os.makedirs(recordings_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     filename = f"mockmate-recording-{timestamp}.webm"
     file_path = os.path.join(recordings_dir, filename)
     content = await file.read()
+    if len(content) > MAX_RECORDING_SIZE:
+        raise HTTPException(status_code=413, detail="Recording file too large (max 50 MB)")
     with open(file_path, "wb") as f:
         f.write(content)
     return {"message": "Recording saved successfully", "filename": filename, "path": file_path}
 
 
 @app.post("/cv-profile")
-async def upload_cv_profile(user_id: str = Form(...), file: UploadFile = File(...)):
+async def upload_cv_profile(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
+    user_id = str(current_user["id"])
     filename = file.filename or ""
     fname_lower = filename.lower()
     file_bytes = await file.read()
+    if len(file_bytes) > MAX_CV_SIZE:
+        raise HTTPException(status_code=413, detail="CV file too large (max 10 MB)")
 
     try:
         if fname_lower.endswith(".pdf"):
@@ -386,22 +445,24 @@ async def upload_cv_profile(user_id: str = Form(...), file: UploadFile = File(..
             raise HTTPException(status_code=400, detail="Unsupported file type. Use PDF, DOCX, or TXT.")
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to read file: {str(e)}")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to read file — try a different format")
 
     if not raw_text.strip():
         raise HTTPException(status_code=400, detail="Could not extract text from the file.")
 
-    # Limit text length before sending to AI (avoid token overflow)
+    check_ai_consent(user_id)
+
+    # Limit text length and strip contact PII before sending to LLM
     words = raw_text.split()
-    cv_text_trimmed = " ".join(words[:1200])
+    cv_text_trimmed = strip_contact_pii(" ".join(words[:1200]))
 
     try:
         prompt = CV_PARSE_PROMPT.format(cv_text=cv_text_trimmed)
         raw = chat(client, MODEL, [{"role": "user", "content": prompt}], max_tokens=2000)
         parsed = extract_json(raw)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to parse CV: {str(e)}")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to parse CV — please try again")
 
     try:
         upsert_user(user_id)
@@ -413,17 +474,49 @@ async def upload_cv_profile(user_id: str = Form(...), file: UploadFile = File(..
 
 
 @app.get("/cv-profile")
-def get_cv_profile_endpoint(user_id: str):
-    profile = get_cv_profile(user_id)
+def get_cv_profile_endpoint(current_user: dict = Depends(get_current_user)):
+    profile = get_cv_profile(str(current_user["id"]))
     if not profile:
         raise HTTPException(status_code=404, detail="No CV profile found")
     return profile
 
 
+@app.post("/analyse-cv")
+async def analyse_cv(current_user: dict = Depends(get_current_user)):
+    user_id = str(current_user["id"])
+    check_ai_consent(user_id)
+
+    # Check pro plan
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT plan FROM users WHERE id = %s", (user_id,))
+            row = cur.fetchone()
+    if not row or row[0] != "pro":
+        raise HTTPException(status_code=403, detail="Resume analysis requires a Pro plan")
+
+    profile = get_cv_profile(user_id)
+    if not profile or not profile.get("raw_text"):
+        raise HTTPException(status_code=404, detail="No CV found — upload one first")
+
+    words = profile["raw_text"].split()
+    cv_text = strip_contact_pii(" ".join(words[:1200]))
+
+    try:
+        prompt = CV_ANALYSIS_PROMPT.format(cv_text=cv_text)
+        raw = chat(client, MODEL, [{"role": "user", "content": prompt}], max_tokens=1000)
+        data = extract_json(raw)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Analysis failed — please try again")
+
+    return data
+
+
 @app.post("/debrief")
-async def debrief(req: DebriefRequest):
+async def debrief(req: DebriefRequest, current_user: dict = Depends(get_current_user)):
     if len(req.qa_pairs) == 0:
         raise HTTPException(status_code=400, detail="qa_pairs is required")
+
+    check_ai_consent(str(current_user["id"]))
 
     qa_text = "\n\n".join(
         [f"Q{i+1}: {pair.question}\nA{i+1}: {pair.answer}" for i, pair in enumerate(req.qa_pairs)]
@@ -440,14 +533,15 @@ async def debrief(req: DebriefRequest):
     try:
         raw = chat(client, MODEL, messages, max_tokens=4000)
         data = extract_json(raw)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to generate debrief — please try again")
 
     return data
 
 
 @app.post("/tts")
-async def text_to_speech(request: Request):
+@limiter.limit("20/minute")
+async def text_to_speech(request: Request, current_user: dict = Depends(get_current_user)):
     body = await request.json()
     text = (body.get("text") or "").strip()
     if not text:
@@ -478,14 +572,15 @@ async def text_to_speech(request: Request):
 # ── Session / Dashboard endpoints ─────────────────────────────────────────────
 
 class AnswerIn(BaseModel):
-    question_index: int
-    question:       str
-    answer:         str
-    score:          Optional[float] = None
-    feedback:       Optional[str]   = None
-    tip:            Optional[str]   = None
-    ideal_answer:   Optional[str]   = None
-    analytics:      Optional[Any]   = None
+    question_index:  int
+    question:        str = Field(..., max_length=2000)
+    answer:          str = Field(..., max_length=5000)
+    score:           Optional[float] = None
+    feedback:        Optional[str]   = Field(None, max_length=2000)
+    tip:             Optional[str]   = Field(None, max_length=1000)
+    ideal_answer:    Optional[str]   = Field(None, max_length=2000)
+    analytics:       Optional[Any]   = None
+    ai_answer_score: Optional[float] = None
 
 
 class FaceMetricsIn(BaseModel):
@@ -496,31 +591,31 @@ class FaceMetricsIn(BaseModel):
 
 
 class SaveSessionRequest(BaseModel):
-    user_id:          str
-    role:             Optional[str]        = "the position"
+    role:             Optional[str]   = Field("the position", max_length=200)
     difficulty:       Optional[str]        = "Mid"
     interview_type:   Optional[str]        = "full"
     overall_score:    Optional[float]      = None
     duration_seconds: Optional[int]        = 0
-    summary:          Optional[str]        = None
-    top_strength:     Optional[str]        = None
-    top_improvement:  Optional[str]        = None
+    summary:          Optional[str]   = Field(None, max_length=5000)
+    top_strength:     Optional[str]   = Field(None, max_length=500)
+    top_improvement:  Optional[str]   = Field(None, max_length=500)
     answers:          List[AnswerIn]       = []
     language:         Optional[str]        = "en-US"
-    company_name:     Optional[str]        = None
-    candidate_name:   Optional[str]        = None
+    company_name:     Optional[str]   = Field(None, max_length=200)
+    candidate_name:   Optional[str]   = Field(None, max_length=200)
     ai_score:         Optional[float]      = None
-    ai_verdict:       Optional[str]        = None
+    ai_verdict:       Optional[str]   = Field(None, max_length=200)
     face_metrics:     Optional[FaceMetricsIn] = None
 
 
 @app.post("/sessions", status_code=201)
-def create_session(req: SaveSessionRequest):
+def create_session(req: SaveSessionRequest, current_user: dict = Depends(get_current_user)):
     try:
-        upsert_user(req.user_id)
+        user_id = str(current_user["id"])
+        upsert_user(user_id)
         fm = req.face_metrics or FaceMetricsIn()
         session_id = save_session(
-            user_id               = req.user_id,
+            user_id               = user_id,
             role                  = req.role,
             difficulty            = req.difficulty,
             interview_type        = req.interview_type,
@@ -541,26 +636,27 @@ def create_session(req: SaveSessionRequest):
             face_samples_count    = fm.face_samples_count,
         )
         return {"session_id": session_id}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to save session")
 
 
 @app.get("/sessions")
-def list_sessions(user_id: str):
+def list_sessions(current_user: dict = Depends(get_current_user)):
     try:
-        sessions = get_sessions(user_id)
+        sessions = get_sessions(str(current_user["id"]))
         for s in sessions:
             if s.get("created_at"):
                 s["created_at"] = s["created_at"].isoformat()
         return {"sessions": sessions}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to retrieve sessions")
 
 
 @app.get("/sessions/filler-stats")
-def filler_stats(user_id: str):
+def filler_stats(current_user: dict = Depends(get_current_user)):
     """Aggregate top filler words across all answers for a user."""
     try:
+        user_id = str(current_user["id"])
         conn = get_connection()
         try:
             with conn.cursor() as cur:
@@ -582,14 +678,14 @@ def filler_stats(user_id: str):
 
         top = sorted(totals.items(), key=lambda x: x[1], reverse=True)[:8]
         return {"fillers": [{"word": w, "count": c} for w, c in top]}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to retrieve stats")
 
 
 @app.get("/sessions/{session_id}")
-def session_detail(session_id: int, user_id: str):
+def session_detail(session_id: int, current_user: dict = Depends(get_current_user)):
     try:
-        data = get_session_detail(session_id, user_id)
+        data = get_session_detail(session_id, str(current_user["id"]))
         if not data:
             raise HTTPException(status_code=404, detail="Session not found")
         if data.get("created_at"):
@@ -597,13 +693,13 @@ def session_detail(session_id: int, user_id: str):
         return data
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to retrieve session")
 
 
 @app.delete("/sessions/{session_id}")
-def remove_session(session_id: int, user_id: str):
-    deleted = delete_session(session_id, user_id)
+def remove_session(session_id: int, current_user: dict = Depends(get_current_user)):
+    deleted = delete_session(session_id, str(current_user["id"]))
     if not deleted:
         raise HTTPException(status_code=404, detail="Session not found")
     return {"deleted": True}

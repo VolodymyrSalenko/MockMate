@@ -1,5 +1,6 @@
 import os
 import time
+import re
 import uuid
 import secrets
 import smtplib
@@ -7,13 +8,14 @@ from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import bcrypt as _bcrypt
 from jose import jwt, JWTError
 from pydantic import BaseModel
 from typing import Optional
+from rate_limit import limiter
 
 from database import (
     get_connection,
@@ -33,7 +35,10 @@ from database import (
     db_clear_reset_token,
 )
 
-SECRET_KEY        = os.getenv("JWT_SECRET", "change-me-use-a-long-random-string-in-production")
+_jwt_secret = os.getenv("JWT_SECRET")
+if not _jwt_secret:
+    raise RuntimeError("JWT_SECRET environment variable is required but not set")
+SECRET_KEY        = _jwt_secret
 ALGORITHM         = "HS256"
 TOKEN_EXPIRE_DAYS = 30
 
@@ -52,9 +57,15 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 # ── JWT helpers ────────────────────────────────────────────────────────────────
 
-def create_token(user_id: str) -> str:
+_EMAIL_REGEX = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]{2,}$')
+
+def _valid_email(email: str) -> bool:
+    return bool(_EMAIL_REGEX.match(email))
+
+
+def create_token(user_id: str, version: int = 0) -> str:
     expire = datetime.utcnow() + timedelta(days=TOKEN_EXPIRE_DAYS)
-    return jwt.encode({"sub": user_id, "exp": expire}, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode({"sub": user_id, "ver": version, "exp": expire}, SECRET_KEY, algorithm=ALGORITHM)
 
 def decode_token(token: str) -> str:
     try:
@@ -233,7 +244,7 @@ def db_get_user_by_email(email: str) -> dict | None:
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, email, password_hash, name, plan, email_verified FROM users WHERE email = %s",
+                "SELECT id, email, password_hash, name, plan, email_verified, token_version FROM users WHERE email = %s",
                 (email.lower().strip(),)
             )
             row = cur.fetchone()
@@ -249,7 +260,7 @@ def db_get_user_by_id(user_id: str) -> dict | None:
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, email, name, plan, email_verified, pending_email FROM users WHERE id = %s",
+                "SELECT id, email, name, plan, email_verified, pending_email, ai_consent, is_admin, token_version FROM users WHERE id = %s",
                 (user_id,)
             )
             row = cur.fetchone()
@@ -257,6 +268,18 @@ def db_get_user_by_id(user_id: str) -> dict | None:
                 return None
             cols = [d[0] for d in cur.description]
             return dict(zip(cols, row))
+    finally:
+        conn.close()
+
+def _db_increment_token_version(user_id: str):
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE users SET token_version = COALESCE(token_version, 0) + 1 WHERE id = %s",
+                (user_id,)
+            )
+        conn.commit()
     finally:
         conn.close()
 
@@ -281,10 +304,18 @@ def db_create_user(user_id: str, email: str, password_hash: str, name: str,
 # ── FastAPI dependency — resolves Bearer token → user dict ─────────────────────
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer)) -> dict:
-    user_id = decode_token(credentials.credentials)
-    user    = db_get_user_by_id(user_id)
+    try:
+        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user = db_get_user_by_id(user_id)
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    if payload.get("ver", 0) != (user.get("token_version") or 0):
+        raise HTTPException(status_code=401, detail="Session expired — please log in again")
     return user
 
 
@@ -320,14 +351,15 @@ class ResetPasswordRequest(BaseModel):
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
 @router.post("/register", status_code=201)
-def register(req: RegisterRequest):
+@limiter.limit("5/minute")
+def register(request: Request, req: RegisterRequest):
     email = req.email.strip().lower()
     name  = req.name.strip()
 
-    if not email or not req.password or not name:
-        raise HTTPException(status_code=400, detail="email, password, and name are required")
-    if len(req.password) < 6:
-        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    if not email or not _valid_email(email) or not req.password or not name:
+        raise HTTPException(status_code=400, detail="Valid email, password, and name are required")
+    if len(req.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
     if db_get_user_by_email(email):
         raise HTTPException(status_code=409, detail="An account with this email already exists")
 
@@ -353,7 +385,8 @@ def register(req: RegisterRequest):
 
 
 @router.post("/login")
-def login(req: LoginRequest):
+@limiter.limit("10/minute")
+def login(request: Request, req: LoginRequest):
     user = db_get_user_by_email(req.email)
     if not user or not user.get("password_hash"):
         raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -372,7 +405,7 @@ def login(req: LoginRequest):
     finally:
         conn.close()
 
-    return {"token": create_token(str(user["id"])), "user": {
+    return {"token": create_token(str(user["id"]), version=user.get("token_version") or 0), "user": {
         "id":             str(user["id"]),
         "email":          user["email"],
         "name":           user["name"],
@@ -402,6 +435,8 @@ def me(current_user: dict = Depends(get_current_user)):
         "plan":           current_user["plan"],
         "email_verified": _effective_verified(current_user),
         "pending_email":  current_user.get("pending_email"),
+        "ai_consent":     current_user.get("ai_consent"),
+        "is_admin":       bool(current_user.get("is_admin")),
     }
 
 
@@ -420,7 +455,7 @@ def resend_verification(current_user: dict = Depends(get_current_user)):
 @router.patch("/email")
 def change_email(req: ChangeEmailRequest, current_user: dict = Depends(get_current_user)):
     new_email = req.new_email.strip().lower()
-    if not new_email or "@" not in new_email:
+    if not new_email or not _valid_email(new_email):
         raise HTTPException(status_code=400, detail="Invalid email address")
     if new_email == current_user["email"]:
         raise HTTPException(status_code=400, detail="This is already your current email address")
@@ -457,6 +492,41 @@ def cancel_email_change(current_user: dict = Depends(get_current_user)):
     return {"ok": True}
 
 
+class AIConsentRequest(BaseModel):
+    consent: bool
+
+@router.post("/ai-consent")
+def set_ai_consent(req: AIConsentRequest, current_user: dict = Depends(get_current_user)):
+    """Record the user's consent decision for AI data processing (Swiss DSG / GDPR Art. 6)."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE users SET ai_consent = %s, ai_consent_at = NOW() WHERE id = %s",
+                (req.consent, str(current_user["id"]))
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True, "ai_consent": req.consent}
+
+
+@router.delete("/account")
+def delete_account(current_user: dict = Depends(get_current_user)):
+    """Permanently erase all data for the authenticated user (Swiss DSG / GDPR right to erasure)."""
+    user_id = str(current_user["id"])
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM sessions   WHERE user_id = %s", (user_id,))  # cascades to answers
+            cur.execute("DELETE FROM cv_profiles WHERE user_id = %s", (user_id,))
+            cur.execute("DELETE FROM users       WHERE id      = %s", (user_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True}
+
+
 @router.patch("/profile")
 def update_profile(req: UpdateProfileRequest, current_user: dict = Depends(get_current_user)):
     name = req.name.strip()
@@ -468,12 +538,13 @@ def update_profile(req: UpdateProfileRequest, current_user: dict = Depends(get_c
 
 @router.patch("/password")
 def update_password(req: UpdatePasswordRequest, current_user: dict = Depends(get_current_user)):
-    if len(req.new_password) < 6:
-        raise HTTPException(status_code=400, detail="New password must be at least 6 characters")
+    if len(req.new_password) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
     current_hash = db_get_password_hash(str(current_user["id"]))
     if not current_hash or not verify_password(req.current_password, current_hash):
         raise HTTPException(status_code=401, detail="Current password is incorrect")
     db_update_password(str(current_user["id"]), hash_password(req.new_password))
+    _db_increment_token_version(str(current_user["id"]))
     return {"ok": True}
 
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { loadHistory, clearHistory, getProgressData } from '../utils/history'
-import { fetchCVProfile, uploadCVProfile } from '../utils/api'
+import { fetchCVProfile, uploadCVProfile, fetchSessions } from '../utils/api'
+import { getStoredToken } from '../context/AuthContext'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { IconMic } from '../utils/icons'
 import { useTheme } from '../context/ThemeContext'
@@ -107,7 +107,23 @@ function scoreColor(s) {
 
 function ProgressChart() {
   const { theme } = useTheme()
-  const data = getProgressData()
+  const [data, setData] = useState([])
+
+  useEffect(() => {
+    fetchSessions().then(sessions => {
+      const chartData = sessions
+        .filter(s => s.overall_score != null)
+        .map(s => ({
+          date: new Date(s.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          score: parseFloat(parseFloat(s.overall_score).toFixed(1)),
+          role: s.role || '',
+          difficulty: s.difficulty || 'Mid',
+        }))
+        .reverse()
+      setData(chartData)
+    }).catch(() => {})
+  }, [])
+
   if (data.length < 2) return null
   const avg = (data.reduce((s, d) => s + d.score, 0) / data.length).toFixed(1)
   return (
@@ -149,43 +165,6 @@ function ProgressChart() {
   )
 }
 
-function PastSessions() {
-  const [open, setOpen] = useState(false)
-  const [sessions, setSessions] = useState(() => loadHistory())
-  if (!sessions.length) return null
-  return (
-    <div className="mt-3 animate-fade-up" style={{ animationDelay: '0.3s' }}>
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between glass border border-slate-200 dark:border-slate-700/50 rounded-xl px-4 py-2.5 text-sm text-slate-600 dark:text-slate-400 hover:border-emerald-500/25 transition-all"
-      >
-        <span>Past Sessions ({sessions.length})</span>
-        <IconChevron className="w-3.5 h-3.5" open={open} />
-      </button>
-      {open && (
-        <div className="mt-2 space-y-1.5">
-          {sessions.map(s => (
-            <div key={s.id} className="glass border border-slate-200 dark:border-slate-700/40 rounded-xl px-4 py-2.5 flex items-center justify-between gap-3">
-              <div className="flex-1 min-w-0">
-                <p className="text-slate-700 dark:text-slate-200 text-sm truncate">{s.role}</p>
-                <p className="text-slate-500 dark:text-slate-500 text-xs">{s.difficulty || 'Mid'} · {new Date(s.date || s.id).toLocaleDateString()}</p>
-              </div>
-              <span className={`text-xs font-bold px-2 py-0.5 rounded-lg flex-shrink-0 ${
-                s.overall_score >= 8 ? 'bg-emerald-500/15 text-emerald-400' :
-                s.overall_score >= 5 ? 'bg-yellow-400/15 text-yellow-400' : 'bg-red-500/15 text-red-400'
-              }`}>{parseFloat(s.overall_score).toFixed(1)}</span>
-            </div>
-          ))}
-          <button onClick={() => { clearHistory(); setSessions([]) }}
-            className="w-full text-slate-500 hover:text-red-400 text-xs py-2 transition text-center">
-            Clear history
-          </button>
-        </div>
-      )}
-    </div>
-  )
-}
-
 // Shared pill button style
 function pillCls(active) {
   return `flex-1 py-2 rounded-xl text-xs font-semibold transition-all ${
@@ -195,7 +174,7 @@ function pillCls(active) {
   }`
 }
 
-export default function Landing({ onStart }) {
+export default function Landing({ onStart, user, onUpgrade }) {
   const [tab,           setTab]           = useState('job')
   const [jd,            setJd]            = useState('')
   const [jdInputMode,   setJdInputMode]   = useState(null)   // 'paste' | 'upload' | null
@@ -223,6 +202,41 @@ export default function Landing({ onStart }) {
   const [selectedCategory, setSelectedCategory] = useState(null)
   const [practiceLoading,  setPracticeLoading]  = useState(false)
   const [practiceError,    setPracticeError]    = useState('')
+
+  // Restore state from URL params on mount (shared links)
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search)
+    if (p.get('mode') === 'practice') setTab('practice')
+    const urlType = p.get('type')
+    if (urlType && INTERVIEW_TYPES.find(t => t.value === urlType)) setInterviewType(urlType)
+    const urlDiff = p.get('difficulty')
+    if (['Junior', 'Mid', 'Senior'].includes(urlDiff)) setDifficulty(urlDiff)
+    const urlLang = p.get('lang')
+    if (LANGUAGES.find(l => l.code === urlLang)) setLanguage(urlLang)
+    const urlTopic = p.get('topic')
+    if (urlTopic) setSelectedCategory(decodeURIComponent(urlTopic))
+    const urlCompany = p.get('company')
+    if (urlCompany) setCompanyName(decodeURIComponent(urlCompany))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync shareable state to URL
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search)
+    p.set('page', 'landing')
+    if (tab === 'practice') {
+      p.set('mode', 'practice')
+      if (selectedCategory) p.set('topic', selectedCategory); else p.delete('topic')
+      p.delete('type'); p.delete('company')
+    } else {
+      p.delete('mode')
+      p.set('type', interviewType)
+      if (companyName.trim()) p.set('company', companyName.trim()); else p.delete('company')
+      p.delete('topic')
+    }
+    p.set('difficulty', difficulty)
+    if (language !== 'en-US') p.set('lang', language); else p.delete('lang')
+    window.history.replaceState({}, '', `?${p.toString()}`)
+  }, [tab, interviewType, difficulty, language, selectedCategory, companyName]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetchCVProfile().then(data => {
@@ -290,7 +304,7 @@ export default function Landing({ onStart }) {
     try {
       const res = await fetch(`${BACKEND_URL}/parse-jd`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getStoredToken()}` },
         body: JSON.stringify({ jd_text: jd, cv_text: cvText || null, difficulty, company_name: companyName.trim() || null, interview_type: interviewType, language }),
       })
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || 'Failed to parse JD') }
@@ -308,7 +322,7 @@ export default function Landing({ onStart }) {
     try {
       const res = await fetch(`${BACKEND_URL}/question-bank`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getStoredToken()}` },
         body: JSON.stringify({ category: selectedCategory, difficulty, language }),
       })
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || 'Failed to load questions') }
@@ -320,6 +334,7 @@ export default function Landing({ onStart }) {
     }
   }
 
+  const isPro       = user?.plan === 'pro'
   const canStart    = jd.trim() && !loading && !cvLoading && !jdLoading
   const canPractice = selectedCategory && !practiceLoading
   // JD is "committed" (show badge) when it has content and no input mode is open
@@ -347,13 +362,22 @@ export default function Landing({ onStart }) {
       <div>
         <label className="block text-slate-600 dark:text-slate-400 text-xs font-semibold uppercase tracking-wide mb-1.5">Language</label>
         <div className="flex gap-1">
-          {LANGUAGES.map(lang => (
-            <button key={lang.code} onClick={() => setLanguage(lang.code)} title={lang.label}
-              className={pillCls(language === lang.code)}
-            >
-              {lang.short}
-            </button>
-          ))}
+          {LANGUAGES.map(lang => {
+            const locked = !isPro && lang.code !== 'en-US'
+            return (
+              <button
+                key={lang.code}
+                onClick={() => locked ? onUpgrade?.() : setLanguage(lang.code)}
+                title={locked ? `${lang.label} — Pro only` : lang.label}
+                className={`${pillCls(language === lang.code && !locked)} relative`}
+              >
+                {lang.short}
+                {locked && (
+                  <span className="absolute -top-1.5 -right-1.5 text-[9px] font-black bg-amber-500 text-white rounded-full px-1 leading-tight">PRO</span>
+                )}
+              </button>
+            )
+          })}
         </div>
       </div>
     </div>
@@ -567,20 +591,26 @@ export default function Landing({ onStart }) {
               <div>
                 <label className="block text-slate-600 dark:text-slate-400 text-xs font-semibold uppercase tracking-wide mb-1.5">Interview Type</label>
                 <div className="grid grid-cols-2 gap-1.5">
-                  {INTERVIEW_TYPES.map(t => (
-                    <button
-                      key={t.value}
-                      onClick={() => setInterviewType(t.value)}
-                      title={t.desc}
-                      className={`py-2 px-3 rounded-xl text-sm font-medium text-center transition-all ${
-                        interviewType === t.value
-                          ? 'bg-emerald-500/15 border border-emerald-500/35 text-emerald-400'
-                          : 'bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/40 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600'
-                      }`}
-                    >
-                      {t.label}
-                    </button>
-                  ))}
+                  {INTERVIEW_TYPES.map(t => {
+                    const locked = !isPro && (t.value === 'technical' || t.value === 'screening')
+                    return (
+                      <button
+                        key={t.value}
+                        onClick={() => locked ? onUpgrade?.() : setInterviewType(t.value)}
+                        title={locked ? `${t.desc} — Pro only` : t.desc}
+                        className={`relative py-2 px-3 rounded-xl text-sm font-medium text-center transition-all ${
+                          interviewType === t.value && !locked
+                            ? 'bg-emerald-500/15 border border-emerald-500/35 text-emerald-400'
+                            : 'bg-slate-100/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/40 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600'
+                        }`}
+                      >
+                        {t.label}
+                        {locked && (
+                          <span className="absolute -top-1.5 -right-1.5 text-[9px] font-black bg-amber-500 text-white rounded-full px-1 leading-tight">PRO</span>
+                        )}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
 
@@ -654,7 +684,6 @@ export default function Landing({ onStart }) {
         </p>
 
         <ProgressChart />
-        <PastSessions />
       </div>
     </div>
   )

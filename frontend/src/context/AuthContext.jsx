@@ -1,8 +1,10 @@
 import { createContext, useContext, useState, useEffect } from 'react'
-
 import { BACKEND_URL } from '../utils/config'
+import { getCookie, setCookie, deleteCookie } from '../utils/cookies'
 
-const STORAGE_KEY = 'mockmate_auth'
+const TOKEN_COOKIE  = 'mockmate_token'
+const UID_COOKIE    = 'mockmate_uid'
+const OLD_LS_KEY    = 'mockmate_auth'   // legacy localStorage key — migrate on first load
 
 const AuthContext = createContext(null)
 
@@ -11,73 +13,78 @@ export function AuthProvider({ children }) {
   const [token,   setToken]   = useState(null)
   const [loading, setLoading] = useState(true)
 
-  // On mount: restore and validate session from localStorage
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY)
-    if (!stored) { setLoading(false); return }
+    let t = getCookie(TOKEN_COOKIE)
 
-    try {
-      const { token: t, user: u } = JSON.parse(stored)
-      fetch(`${BACKEND_URL}/auth/me`, {
-        headers: { Authorization: `Bearer ${t}` },
-      })
-        .then(res => {
-          if (res.ok) return res.json().then(fresh => {
-            // Use fresh data from server so email_verified etc. are always current
-            const merged = { ...u, ...fresh }
-            localStorage.setItem(STORAGE_KEY, JSON.stringify({ token: t, user: merged }))
-            setToken(t); setUser(merged)
-          })
-          localStorage.removeItem(STORAGE_KEY)
-        })
-        .catch(() => {
-          // Network unavailable — trust cached session
-          setToken(t); setUser(u)
-        })
-        .finally(() => setLoading(false))
-    } catch {
-      localStorage.removeItem(STORAGE_KEY)
-      setLoading(false)
+    // One-time migration from old localStorage session
+    if (!t) {
+      try {
+        const stored = localStorage.getItem(OLD_LS_KEY)
+        if (stored) {
+          const parsed = JSON.parse(stored)
+          if (parsed?.token) {
+            t = parsed.token
+            setCookie(TOKEN_COOKIE, t)
+            if (parsed.user?.id) setCookie(UID_COOKIE, parsed.user.id)
+          }
+          localStorage.removeItem(OLD_LS_KEY)
+        }
+      } catch {}
     }
+
+    if (!t) { setLoading(false); return }
+
+    fetch(`${BACKEND_URL}/auth/me`, {
+      headers: { Authorization: `Bearer ${t}` },
+    })
+      .then(res => {
+        if (res.ok) return res.json().then(fresh => {
+          setCookie(TOKEN_COOKIE, t)
+          setCookie(UID_COOKIE, fresh.id)
+          setToken(t)
+          setUser(fresh)
+        })
+        else {
+          deleteCookie(TOKEN_COOKIE)
+          deleteCookie(UID_COOKIE)
+        }
+      })
+      .catch(() => {
+        // Network unavailable — surface token so UI stays responsive
+        setToken(t)
+      })
+      .finally(() => setLoading(false))
   }, [])
 
-  const login = (token, user) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ token, user }))
-    setToken(token)
-    setUser(user)
+  const login = (t, u) => {
+    setCookie(TOKEN_COOKIE, t)
+    setCookie(UID_COOKIE, u.id)
+    setToken(t)
+    setUser(u)
   }
 
   const logout = () => {
-    localStorage.removeItem(STORAGE_KEY)
+    deleteCookie(TOKEN_COOKIE)
+    deleteCookie(UID_COOKIE)
     setToken(null)
     setUser(null)
   }
 
   const updateUser = (partial) => {
-    setUser(prev => {
-      const next = { ...prev, ...partial }
-      const stored = localStorage.getItem(STORAGE_KEY)
-      if (stored) {
-        const parsed = JSON.parse(stored)
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...parsed, user: next }))
-      }
-      return next
-    })
+    setUser(prev => ({ ...prev, ...partial }))
   }
 
   const refreshUser = async () => {
-    const stored = localStorage.getItem(STORAGE_KEY)
-    if (!stored) return
+    const t = token || getCookie(TOKEN_COOKIE)
+    if (!t) return
     try {
-      const { token: t, user: u } = JSON.parse(stored)
       const res = await fetch(`${BACKEND_URL}/auth/me`, {
         headers: { Authorization: `Bearer ${t}` },
       })
       if (res.ok) {
         const fresh = await res.json()
-        const merged = { ...u, ...fresh }
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ token: t, user: merged }))
-        setUser(merged)
+        setCookie(UID_COOKIE, fresh.id)
+        setUser(fresh)
       }
     } catch {}
   }
@@ -93,11 +100,7 @@ export function useAuth() {
   return useContext(AuthContext)
 }
 
-/** Call this outside React components (e.g. in api.js) */
+/** Call this outside React components (e.g. in api.js, Settings.jsx) */
 export function getStoredToken() {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY)
-    if (stored) return JSON.parse(stored).token
-  } catch {}
-  return null
+  return getCookie(TOKEN_COOKIE)
 }

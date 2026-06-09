@@ -101,10 +101,34 @@ export default function Sidebar({ activeTab, onTab, collapsed, onToggle, onUpgra
         {!collapsed && (
           <p className="text-slate-400 dark:text-slate-600 text-xs font-bold uppercase tracking-widest px-4 pt-1 pb-1">Menu</p>
         )}
-        <NavItem icon={<IconMic className="w-4 h-4" />}       label="Practice"   active={activeTab === 'landing'}   collapsed={collapsed} onClick={() => onTab('landing')} />
-        <NavItem icon={<IconBarChart className="w-4 h-4" />} label="Dashboard"  active={activeTab === 'dashboard'} collapsed={collapsed} onClick={() => onTab('dashboard')} />
-        <NavItem icon={<IconList className="w-4 h-4" />}     label="Sessions"   active={activeTab === 'sessions'}  collapsed={collapsed} onClick={() => onTab('sessions')} />
-        <NavItem icon={<IconDocument className="w-4 h-4" />} label="CV Profile" active={activeTab === 'cv'}        collapsed={collapsed} onClick={() => onTab('cv')} />
+        <NavItem icon={<IconBarChart className="w-4 h-4" />} label="Dashboard" active={activeTab === 'dashboard'} collapsed={collapsed} onClick={() => onTab('dashboard')} />
+        <NavItem icon={<IconMic className="w-4 h-4" />}     label="Practice"  active={activeTab === 'landing'}   collapsed={collapsed} onClick={() => onTab('landing')} />
+        <NavItem icon={<IconList className="w-4 h-4" />}    label="Sessions"  active={activeTab === 'sessions'}  collapsed={collapsed} onClick={() => onTab('sessions')} />
+        <NavItem
+          icon={
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          }
+          label="Settings"
+          active={activeTab === 'settings'}
+          collapsed={collapsed}
+          onClick={() => onTab('settings')}
+        />
+        {user?.is_admin && (
+          <NavItem
+            icon={
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+            }
+            label="Admin"
+            active={activeTab === 'admin'}
+            collapsed={collapsed}
+            onClick={() => onTab('admin')}
+          />
+        )}
       </nav>
 
       {/* Bottom section */}
@@ -118,17 +142,6 @@ export default function Sidebar({ activeTab, onTab, collapsed, onToggle, onUpgra
               className="absolute bottom-full mb-2 left-0 right-0 rounded-2xl overflow-hidden shadow-2xl border border-slate-200 dark:border-slate-700/50 z-50"
               style={{ background: theme === 'dark' ? 'rgba(15,23,42,0.98)' : 'rgba(255,255,255,0.98)', backdropFilter: 'blur(20px)', boxShadow: theme === 'dark' ? '' : '0 4px 20px rgba(100,116,139,0.12), 0 1px 4px rgba(100,116,139,0.08)' }}
             >
-              <button
-                onClick={() => { setMenuOpen(false); onTab('settings') }}
-                className="w-full flex items-center gap-3 px-4 py-3 text-slate-600 dark:text-slate-300 hover:text-emerald-400 hover:bg-emerald-500/8 transition-colors text-sm font-medium group"
-              >
-                <svg className="w-4 h-4 flex-shrink-0 text-slate-500 group-hover:text-emerald-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-                Profile
-              </button>
-              <div className="h-px bg-slate-200 dark:bg-slate-800/80 mx-3" />
               <button
                 onClick={() => { setMenuOpen(false); logout() }}
                 className="w-full flex items-center gap-3 px-4 py-3 text-slate-600 dark:text-slate-300 hover:text-red-400 hover:bg-red-500/8 transition-colors text-sm font-medium group"

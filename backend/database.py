@@ -184,6 +184,16 @@ def migrate_tables():
 
         # users — password reset flow
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token TEXT",
+
+        # users — AI data processing consent (Swiss DSG / GDPR)
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_consent    BOOLEAN DEFAULT NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_consent_at TIMESTAMP",
+
+        # users — admin flag (only settable via direct DB; never via API)
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE",
+
+        # users — token version for server-side session invalidation (password change)
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INT DEFAULT 0",
     ]
     conn = get_connection()
     try:

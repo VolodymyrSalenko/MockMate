@@ -13,7 +13,11 @@ import CVProfile    from './components/CVProfile'
 import Sessions     from './components/Sessions'
 import ProModal     from './components/ProModal'
 import Settings     from './components/Settings'
-import ErrorBoundary from './components/ErrorBoundary'
+import ErrorBoundary    from './components/ErrorBoundary'
+import CookieBanner     from './components/CookieBanner'
+import AIConsentModal   from './components/AIConsentModal'
+import AdminPanel       from './components/AdminPanel'
+import OnboardingModal, { shouldShowOnboarding } from './components/OnboardingModal'
 
 function TopControls({ belowHeader, user, onUpgradeClick, actionButton }) {
   const { theme, toggleTheme } = useTheme()
@@ -67,11 +71,50 @@ function AppInner() {
   const [faceMetrics,      setFaceMetrics]      = useState(null)
   const [recording,        setRecording]        = useState(null)
   const [banner,           setBanner]           = useState(null)
+  const [showAIConsent,    setShowAIConsent]    = useState(false)
+  const [showOnboarding,   setShowOnboarding]   = useState(false)
+  const [settingsTab,      setSettingsTab]      = useState('profile')
+
+  // Show AI consent modal once for users who haven't decided yet
+  useEffect(() => {
+    if (user && user.ai_consent == null) setShowAIConsent(true)
+  }, [user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Show onboarding once for new users
+  useEffect(() => {
+    if (user && shouldShowOnboarding()) setShowOnboarding(true)
+  }, [user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Wake up the Render backend immediately so it's ready when the user acts
   useEffect(() => {
     fetch(`${BACKEND_URL}/health`).catch(() => {})
   }, [])
+
+  // Read initial page from URL on mount (shared links)
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search)
+    // Don't interfere with special redirect params
+    if (p.has('checkout') || p.has('email_changed') || p.has('email_change_error') || p.has('dev')) return
+    const page = p.get('page')
+    if (page && ['landing', 'dashboard', 'sessions', 'settings', 'admin'].includes(page)) {
+      setView(page)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Write current page to URL whenever view changes
+  useEffect(() => {
+    if (!user) return
+    const p = new URLSearchParams(window.location.search)
+    if (p.has('checkout') || p.has('email_changed') || p.has('email_change_error')) return
+    p.set('page', view)
+    // Strip landing-specific params when leaving the landing page
+    if (view !== 'landing') {
+      ['mode', 'type', 'difficulty', 'lang', 'topic', 'company'].forEach(k => p.delete(k))
+    }
+    // Strip settings tab param when leaving settings
+    if (view !== 'settings') p.delete('tab')
+    window.history.replaceState({}, '', `?${p.toString()}`)
+  }, [view]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Handle redirect params from auth backend and Polar checkout
   useEffect(() => {
@@ -161,7 +204,7 @@ function AppInner() {
   }
 
   // Interview and debrief are full-screen — no sidebar
-  const sidebarViews = ['dashboard', 'sessions', 'landing', 'cv', 'settings']
+  const sidebarViews = ['dashboard', 'sessions', 'landing', 'settings', 'admin']
 
   return (
     <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950">
@@ -195,7 +238,20 @@ function AppInner() {
         />
       )}
 
-      {showProModal && <ProModal onClose={() => setShowProModal(false)} />}
+      {showProModal    && <ProModal onClose={() => setShowProModal(false)} />}
+      {showAIConsent   && <AIConsentModal onClose={() => setShowAIConsent(false)} />}
+      {showOnboarding  && (
+        <OnboardingModal
+          onUploadCV={() => {
+            setShowOnboarding(false)
+            const p = new URLSearchParams(window.location.search)
+            p.set('page', 'settings'); p.set('tab', 'cv')
+            window.history.replaceState({}, '', `?${p.toString()}`)
+            setView('settings')
+          }}
+          onSkip={() => setShowOnboarding(false)}
+        />
+      )}
 
       {/* Global notification banner (e.g. email changed redirect) */}
       {banner && (
@@ -213,11 +269,12 @@ function AppInner() {
       <main className={`flex-1 min-h-screen transition-all duration-300 ${
         sidebarViews.includes(view) ? (sidebarCollapsed ? 'ml-16' : 'ml-60') : ''
       }`}>
-        {view === 'dashboard' && <Dashboard onNavigate={setView} />}
-        {view === 'sessions'  && <Sessions  onNavigate={setView} />}
-        {view === 'settings'  && <Settings  onNavigate={setView} />}
-        {view === 'cv'        && <CVProfile />}
-        {view === 'landing'   && <Landing   onStart={handleStart} />}
+        {view === 'dashboard' && <Dashboard  onNavigate={setView} />}
+        {view === 'sessions'  && <Sessions   onNavigate={setView} />}
+        {view === 'settings'  && <Settings initialTab={settingsTab} />}
+        {view === 'admin'     && user?.is_admin && <AdminPanel />}
+        {view === 'cv'        && <CVProfile user={user} onUpgrade={() => setShowProModal(true)} />}
+        {view === 'landing'   && <Landing   onStart={handleStart} user={user} onUpgrade={() => setShowProModal(true)} />}
         {view === 'interview' && sessionData && (
           <Interview sessionData={sessionData} onComplete={handleComplete} />
         )}
@@ -246,6 +303,7 @@ export default function App() {
         <AuthProvider>
           <AppInner />
         </AuthProvider>
+        <CookieBanner />
       </ErrorBoundary>
     </ThemeProvider>
   )

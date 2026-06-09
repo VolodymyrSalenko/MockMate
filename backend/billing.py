@@ -86,11 +86,12 @@ async def polar_webhook(
 ):
     raw_body = await request.body()
 
-    if POLAR_WEBHOOK_SECRET:
-        if not all([webhook_id, webhook_timestamp, webhook_signature]):
-            raise HTTPException(status_code=400, detail="Missing webhook headers")
-        if not _verify_polar_signature(raw_body, webhook_id, webhook_timestamp, webhook_signature):
-            raise HTTPException(status_code=403, detail="Invalid webhook signature")
+    if not POLAR_WEBHOOK_SECRET:
+        raise HTTPException(status_code=503, detail="Webhook not configured — POLAR_WEBHOOK_SECRET is required")
+    if not all([webhook_id, webhook_timestamp, webhook_signature]):
+        raise HTTPException(status_code=400, detail="Missing webhook headers")
+    if not _verify_polar_signature(raw_body, webhook_id, webhook_timestamp, webhook_signature):
+        raise HTTPException(status_code=403, detail="Invalid webhook signature")
 
     payload    = json.loads(raw_body)
     event_type = payload.get("type", "")

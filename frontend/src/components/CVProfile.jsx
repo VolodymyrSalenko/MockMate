@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { fetchCVProfile, uploadCVProfile } from '../utils/api'
+import { fetchCVProfile, uploadCVProfile, analyseCV } from '../utils/api'
 import { IconUser, IconZap, IconBriefcase, IconGraduation, IconGlobe, IconAward, IconMail, IconPhone, IconMapPin, IconLink } from '../utils/icons'
 
 function BgOrbs() {
@@ -151,13 +151,43 @@ function UploadZone({ onFile, uploading, error }) {
   )
 }
 
-export default function CVProfile() {
-  const [profile,    setProfile]    = useState(null)   // parsed CV object
-  const [loading,    setLoading]    = useState(true)   // initial fetch
-  const [uploading,  setUploading]  = useState(false)  // file upload in progress
+function ScoreBar({ score, max = 10, color = 'bg-emerald-500' }) {
+  const pct = Math.round((score / max) * 100)
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex-1 h-1.5 bg-slate-200 dark:bg-slate-700/60 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="text-xs font-bold text-slate-700 dark:text-slate-300 w-6 text-right">{score}</span>
+    </div>
+  )
+}
+
+export default function CVProfile({ user, onUpgrade }) {
+  const [profile,    setProfile]    = useState(null)
+  const [loading,    setLoading]    = useState(true)
+  const [uploading,  setUploading]  = useState(false)
   const [error,      setError]      = useState(null)
   const [updatedAt,  setUpdatedAt]  = useState(null)
+  const [analysis,   setAnalysis]   = useState(null)
+  const [analysing,  setAnalysing]  = useState(false)
+  const [analysisErr,setAnalysisErr]= useState(null)
   const updateInputRef = useRef(null)
+
+  const isPro = user?.plan === 'pro'
+
+  const handleAnalyse = async () => {
+    if (!isPro) { onUpgrade?.(); return }
+    setAnalysing(true); setAnalysisErr(null)
+    try {
+      setAnalysis(await analyseCV())
+    } catch (e) {
+      if (e.message === 'pro_required') onUpgrade?.()
+      else setAnalysisErr(e.message || 'Analysis failed')
+    } finally {
+      setAnalysing(false)
+    }
+  }
 
   useEffect(() => {
     fetchCVProfile().then(data => {
@@ -228,8 +258,22 @@ export default function CVProfile() {
               </div>
             </div>
 
-            {/* Update CV button */}
+            {/* Right-side actions */}
             <div className="flex flex-col items-end gap-2 flex-shrink-0">
+              <button
+                onClick={handleAnalyse}
+                disabled={analysing}
+                className={`flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl transition-all disabled:opacity-50 ${
+                  isPro
+                    ? 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white shadow-md shadow-emerald-500/20'
+                    : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white shadow-md shadow-amber-500/20'
+                }`}
+              >
+                {analysing
+                  ? <><span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />Analysing…</>
+                  : isPro ? '✨ Analyse CV' : '🔒 Analyse CV'
+                }
+              </button>
               <button
                 onClick={() => updateInputRef.current?.click()}
                 disabled={uploading}
@@ -261,6 +305,98 @@ export default function CVProfile() {
           className="hidden"
           onChange={e => { if (e.target.files[0]) handleFile(e.target.files[0]) }}
         />
+
+        {/* ── Analysis error ── */}
+        {analysisErr && (
+          <div className="bg-red-500/8 border border-red-500/20 rounded-2xl px-4 py-3 animate-fade-up">
+            <p className="text-red-400 text-sm">{analysisErr}</p>
+          </div>
+        )}
+
+        {/* ── Analysis results ── */}
+        {analysis && (
+          <SectionCard title="Resume Analysis" icon={<span className="text-sm">🔬</span>} delay={0}>
+            {/* Score row */}
+            <div className="grid grid-cols-2 gap-3 mb-5">
+              <div className="bg-slate-100/60 dark:bg-slate-800/40 rounded-2xl p-4 text-center">
+                <p className="text-slate-500 dark:text-slate-500 text-xs font-medium mb-1">Overall</p>
+                <p className={`text-3xl font-black ${analysis.overall_score >= 8 ? 'text-emerald-500' : analysis.overall_score >= 5 ? 'text-amber-500' : 'text-red-500'}`}>
+                  {analysis.overall_score}<span className="text-base font-semibold text-slate-400">/10</span>
+                </p>
+              </div>
+              <div className="bg-slate-100/60 dark:bg-slate-800/40 rounded-2xl p-4 text-center">
+                <p className="text-slate-500 dark:text-slate-500 text-xs font-medium mb-1">ATS Score</p>
+                <p className={`text-3xl font-black ${analysis.ats_score >= 70 ? 'text-emerald-400' : analysis.ats_score >= 45 ? 'text-amber-400' : 'text-red-400'}`}>
+                  {analysis.ats_score}<span className="text-base font-semibold text-slate-400">%</span>
+                </p>
+              </div>
+            </div>
+
+            {analysis.verdict && (
+              <p className="text-slate-600 dark:text-slate-400 text-xs italic mb-4 leading-relaxed border-l-2 border-emerald-500/40 pl-3">
+                {analysis.verdict}
+              </p>
+            )}
+
+            {/* Section scores */}
+            {Object.entries(analysis.section_scores || {}).filter(([, v]) => v != null).length > 0 && (
+              <div className="mb-4">
+                <p className="text-slate-700 dark:text-slate-300 text-xs font-semibold uppercase tracking-wide mb-2">Section Scores</p>
+                <div className="space-y-2">
+                  {Object.entries(analysis.section_scores).filter(([, v]) => v != null).map(([key, val]) => (
+                    <div key={key} className="grid grid-cols-[80px_1fr] items-center gap-2">
+                      <span className="text-slate-500 dark:text-slate-500 text-xs capitalize">{key}</span>
+                      <ScoreBar score={val} color={val >= 8 ? 'bg-emerald-500' : val >= 5 ? 'bg-amber-500' : 'bg-red-500'} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {analysis.strengths?.length > 0 && (
+              <div className="mb-4">
+                <p className="text-slate-700 dark:text-slate-300 text-xs font-semibold uppercase tracking-wide mb-2">Strengths</p>
+                <div className="space-y-1.5">
+                  {analysis.strengths.map((s, i) => (
+                    <div key={i} className="flex items-start gap-2">
+                      <span className="text-emerald-500 flex-shrink-0 mt-0.5 text-xs">✓</span>
+                      <p className="text-slate-600 dark:text-slate-400 text-xs leading-relaxed">{s}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {analysis.improvements?.length > 0 && (
+              <div className="mb-4">
+                <p className="text-slate-700 dark:text-slate-300 text-xs font-semibold uppercase tracking-wide mb-2">Improvements</p>
+                <div className="space-y-1.5">
+                  {analysis.improvements.map((s, i) => (
+                    <div key={i} className="flex items-start gap-2">
+                      <span className="text-amber-500 flex-shrink-0 mt-0.5 text-xs">→</span>
+                      <p className="text-slate-600 dark:text-slate-400 text-xs leading-relaxed">{s}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {analysis.missing_keywords?.length > 0 && (
+              <div className="mb-4">
+                <p className="text-slate-700 dark:text-slate-300 text-xs font-semibold uppercase tracking-wide mb-2">Missing Keywords</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {analysis.missing_keywords.map((kw, i) => (
+                    <span key={i} className="px-2.5 py-1 text-xs rounded-full bg-red-500/10 border border-red-500/20 text-red-400 font-medium">{kw}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <button onClick={() => setAnalysis(null)} className="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors">
+              Clear results
+            </button>
+          </SectionCard>
+        )}
 
         {/* ── Profile Summary ── */}
         {p.profile && (
@@ -333,6 +469,7 @@ export default function CVProfile() {
             )}
           </div>
         )}
+
 
       </div>
     </div>

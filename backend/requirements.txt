@@ -10,3 +10,4 @@ psycopg[binary]
 httpx
 bcrypt
 python-jose[cryptography]
+slowapi
