@@ -293,7 +293,14 @@ export default function Interview({ sessionData, onComplete }) {
     }
   }
 
-  const { speak, isSupported: ttsSupported } = useTTS({ language })
+  const { speak, prefetch, cancel: cancelTTS, isSupported: ttsSupported } = useTTS({ language })
+
+  // Kick off TTS fetch for the intro immediately on first render — before any useEffect fires
+  const prefetchedRef = useRef(false)
+  if (!prefetchedRef.current) {
+    prefetchedRef.current = true
+    prefetch(intro_message)
+  }
 
   const handleFinalTranscript = useCallback(async (transcript) => {
     if (!transcript.trim()) {
