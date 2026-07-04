@@ -2,7 +2,7 @@
 
 Practice job interviews with a human-sounding AI interviewer. Paste a job description (or upload it as a file), answer 5 questions by voice, and receive a fully scored debrief with speech analytics. Your sessions and CV are saved to a personal dashboard.
 
-**Live Demo:** https://mockmate-1-hmpj.onrender.com/
+**Live Demo:** https://mockmate-hk93.onrender.com
 
 ---
 
