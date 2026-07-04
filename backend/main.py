@@ -63,6 +63,10 @@ app.include_router(auth_router)
 app.include_router(billing_router)
 app.include_router(admin_router)
 
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
 @app.on_event("startup")
 def startup():
     missing = [k for k in REQUIRED_ENV if not os.getenv(k)]
