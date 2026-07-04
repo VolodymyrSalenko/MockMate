@@ -18,12 +18,16 @@ def _parse_url(url: str) -> dict:
     user_pass, rest = url.split("@", 1)
     user, password = (user_pass.split(":", 1) if ":" in user_pass else (user_pass, ""))
     host_port, dbname = rest.split("/", 1)
+    dbname = dbname.split("?")[0]  # strip query params like ?sslmode=require
     host, port = (host_port.split(":") if ":" in host_port else (host_port, "5432"))
     return dict(user=user, password=password, host=host, port=int(port), dbname=dbname)
 
 
 def get_connection():
-    return psycopg.connect(DATABASE_URL, sslmode="require" if "render.com" in DATABASE_URL else "prefer")
+    if "sslmode=" in DATABASE_URL:
+        return psycopg.connect(DATABASE_URL)
+    needs_ssl = "render.com" in DATABASE_URL or "neon.tech" in DATABASE_URL
+    return psycopg.connect(DATABASE_URL, sslmode="require" if needs_ssl else "prefer")
 
 @contextmanager
 def db():
