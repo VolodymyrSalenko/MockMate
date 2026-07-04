@@ -185,11 +185,16 @@ def _send_email(
     msg.attach(MIMEText(html,  "html"))
 
     try:
-        with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
-            server.ehlo()
-            server.starttls()
-            server.login(smtp_user, smtp_pass)
-            server.sendmail(smtp_from, to_email, msg.as_string())
+        if smtp_port == 465:
+            with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=30) as server:
+                server.login(smtp_user, smtp_pass)
+                server.sendmail(smtp_from, to_email, msg.as_string())
+        else:
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as server:
+                server.ehlo()
+                server.starttls()
+                server.login(smtp_user, smtp_pass)
+                server.sendmail(smtp_from, to_email, msg.as_string())
         print(f"  ✅ Email sent to {to_email}: {subject}")
     except Exception as e:
         print(f"  ⚠️  Failed to send email to {to_email}: {e}")
