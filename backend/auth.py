@@ -176,6 +176,28 @@ def _send_email(
 </body>
 </html>"""
 
+    brevo_api_key = os.getenv("BREVO_API_KEY")
+    if brevo_api_key:
+        try:
+            import httpx
+            with httpx.Client(timeout=30) as client:
+                r = client.post(
+                    "https://api.brevo.com/v3/smtp/email",
+                    headers={"api-key": brevo_api_key, "Content-Type": "application/json"},
+                    json={
+                        "sender": {"email": smtp_from, "name": "MockMate"},
+                        "to": [{"email": to_email}],
+                        "subject": subject,
+                        "htmlContent": html,
+                        "textContent": plain,
+                    },
+                )
+                r.raise_for_status()
+            print(f"  ✅ Email sent to {to_email}: {subject}")
+        except Exception as e:
+            print(f"  ⚠️  Failed to send email to {to_email}: {e}")
+        return
+
     msg = MIMEMultipart("alternative")
     msg["Subject"]    = subject
     msg["From"]       = smtp_from
