@@ -4,7 +4,6 @@ services:
     runtime: docker
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
-    plan: free
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
@@ -38,7 +37,6 @@ services:
     buildCommand: npm run build
     staticPublishPath: ./dist
     rootDir: frontend
-    plan: free
     routes:
       - type: rewrite
         source: /*
@@ -53,4 +51,3 @@ databases:
   - name: mockmate-db
     databaseName: mockmate
     user: mockmate
-    plan: free
