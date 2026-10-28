@@ -109,7 +109,7 @@ function AppInner() {
     p.set('page', view)
     // Strip landing-specific params when leaving the landing page
     if (view !== 'landing') {
-      ['mode', 'type', 'difficulty', 'lang', 'topic', 'company'].forEach(k => p.delete(k))
+      ['mode', 'type', 'difficulty', 'lang', 'topic', 'company', 'questions'].forEach(k => p.delete(k))
     }
     // Strip settings tab param when leaving settings
     if (view !== 'settings') p.delete('tab')
