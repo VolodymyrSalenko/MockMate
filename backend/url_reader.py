@@ -25,6 +25,7 @@ TIMEOUT        = httpx.Timeout(10.0, connect=5.0)
 ALLOWED_PORTS  = {None, 80, 443}
 BLOCKED_HOST_SUFFIXES = (".localhost", ".local", ".internal", ".lan", ".home", ".corp")
 # Honest bot identity; sites that block bots get a clear "paste the text instead" message
+PASTE_HINT = "No problem: just open the job ad in your browser, copy the text and paste it here."
 USER_AGENT = "MockMateBot/1.0 (job ad reader; +https://github.com/VolodymyrSalenko/MockMate)"
 
 NOISE_TAGS = ["script", "style", "noscript", "svg", "nav", "header", "footer",
@@ -52,7 +53,7 @@ def normalize_url(raw: str) -> str:
     if not url:
         raise UrlReadError(400, "Please paste a link to the job ad.")
     if len(url) > MAX_URL_LENGTH:
-        raise UrlReadError(400, "This link is too long. Please check it.")
+        raise UrlReadError(400, "This link looks too long. Please check that you copied it correctly.")
     if "://" not in url:
         url = "https://" + url   # people often paste "jobs.ch/..." without the scheme
     return url
@@ -62,20 +63,20 @@ def check_url(url: str):
     """Return (parts, host, port) for a safe-looking URL, or raise UrlReadError."""
     parts = urlsplit(url)
     if parts.scheme not in ("http", "https"):
-        raise UrlReadError(400, "Only web links that start with http:// or https:// are supported.")
+        raise UrlReadError(400, "This doesn't look like a website link. A link usually starts with https://")
     if parts.username or parts.password:
-        raise UrlReadError(400, "Links that contain a username or password are not allowed.")
+        raise UrlReadError(400, f"This link contains a password, so we can't open it for safety reasons. {PASTE_HINT}")
     host = (parts.hostname or "").rstrip(".").lower()
     if not host:
-        raise UrlReadError(400, "This doesn't look like a valid web link. Please check it.")
+        raise UrlReadError(400, "This doesn't look like a website link. Please check that you copied it correctly.")
     try:
         port = parts.port
     except ValueError:
-        raise UrlReadError(400, "This link has an invalid port number.")
+        raise UrlReadError(400, f"We can only open normal website links. {PASTE_HINT}")
     if port not in ALLOWED_PORTS:
-        raise UrlReadError(400, "Links with unusual port numbers are not allowed. Please use a normal website link.")
+        raise UrlReadError(400, f"We can only open normal website links. {PASTE_HINT}")
     if host == "localhost" or host.endswith(BLOCKED_HOST_SUFFIXES):
-        raise UrlReadError(400, "This link points to a local or internal address. MockMate only opens public websites.")
+        raise UrlReadError(400, f"For safety reasons, we can only open public websites. {PASTE_HINT}")
     return parts, host, port
 
 
@@ -88,7 +89,7 @@ async def resolve_public_ip(host: str, port: int) -> ipaddress._BaseAddress:
     except (socket.gaierror, UnicodeError):
         raise UrlReadError(400, "We couldn't find this website. Please check the link for typos.")
     except asyncio.TimeoutError:
-        raise UrlReadError(504, "Looking up this website took too long. Please try again.")
+        raise UrlReadError(504, "This website is taking too long to answer. Please try again in a moment, or copy the text and paste it here.")
 
     ips = []
     for info in infos:
@@ -96,8 +97,7 @@ async def resolve_public_ip(host: str, port: int) -> ipaddress._BaseAddress:
         if getattr(ip, "ipv4_mapped", None):
             ip = ip.ipv4_mapped
         if not ip.is_global or ip.is_multicast:
-            raise UrlReadError(400, "This link points to a private or internal network address. "
-                                    "For security reasons MockMate only opens public websites.")
+            raise UrlReadError(400, f"For safety reasons, we can only open public websites. {PASTE_HINT}")
         ips.append(ip)
     if not ips:
         raise UrlReadError(400, "We couldn't find this website. Please check the link for typos.")
@@ -109,26 +109,25 @@ async def resolve_public_ip(host: str, port: int) -> ipaddress._BaseAddress:
 
 def _status_error(code: int) -> UrlReadError:
     if code in (401, 403, 999):   # 999 = LinkedIn's "bot blocked"
-        return UrlReadError(422, "This website does not allow automatic reading (it may need a login, "
-                                 "like LinkedIn or Indeed). Please open the job ad, copy the text and paste it instead.")
+        return UrlReadError(422, f"Sorry, this website doesn't let other apps read its job ads. {PASTE_HINT}")
     if code in (404, 410):
-        return UrlReadError(422, f"The page was not found (error {code}). Maybe the job ad was removed. Please check the link.")
+        return UrlReadError(422, "We couldn't find this job ad. Maybe it was removed, or the link has a small mistake. Please check the link.")
     if code == 429:
-        return UrlReadError(422, "The website is limiting visitors right now. Try again in a minute, or paste the text instead.")
+        return UrlReadError(422, "This website is busy right now. Please try again in a minute, or copy the text and paste it here.")
     if code >= 500:
-        return UrlReadError(502, f"The website has a problem right now (error {code}). Try again later, or paste the text instead.")
-    return UrlReadError(422, f"The website answered with error {code}. Please paste the text instead.")
+        return UrlReadError(502, "This website has a problem at the moment. Please try again later, or copy the text and paste it here.")
+    return UrlReadError(422, f"Sorry, we couldn't open this page. {PASTE_HINT}")
 
 
 async def _read_limited(resp: httpx.Response) -> bytes:
     declared = resp.headers.get("content-length")
     if declared and declared.isdigit() and int(declared) > MAX_BYTES:
-        raise UrlReadError(413, "This page is too big to read (over 2 MB). Please paste the text instead.")
+        raise UrlReadError(413, f"This page is too big for us to read. {PASTE_HINT}")
     chunks, size = [], 0
     async for chunk in resp.aiter_bytes():
         size += len(chunk)
         if size > MAX_BYTES:
-            raise UrlReadError(413, "This page is too big to read (over 2 MB). Please paste the text instead.")
+            raise UrlReadError(413, f"This page is too big for us to read. {PASTE_HINT}")
         chunks.append(chunk)
     return b"".join(chunks)
 
@@ -159,7 +158,7 @@ async def fetch_job_page(raw_url: str) -> JobPage:
                     if resp.is_redirect:
                         location = resp.headers.get("location")
                         if not location:
-                            raise UrlReadError(502, "The website sent a broken redirect. Please paste the text instead.")
+                            raise UrlReadError(502, f"Sorry, we couldn't open this page. {PASTE_HINT}")
                         url = urljoin(url, location)
                         continue
                     if resp.status_code >= 400:
@@ -168,29 +167,28 @@ async def fetch_job_page(raw_url: str) -> JobPage:
                     ctype = resp.headers.get("content-type", "").split(";")[0].strip().lower()
                     body = await _read_limited(resp)
             except httpx.TimeoutException:
-                raise UrlReadError(504, "The website took too long to answer. Try again, or paste the text instead.")
+                raise UrlReadError(504, "This website is taking too long to answer. Please try again in a moment, or copy the text and paste it here.")
             except httpx.ConnectError:
-                raise UrlReadError(502, "We couldn't connect to this website. Please check the link.")
+                raise UrlReadError(502, "We couldn't reach this website. Please check the link, or copy the text and paste it here.")
             except httpx.HTTPError:
-                raise UrlReadError(502, "Something went wrong while reading this website. Please paste the text instead.")
+                raise UrlReadError(502, f"Sorry, something went wrong while opening this page. {PASTE_HINT}")
 
             if ctype == "application/pdf":
                 try:
                     text = extract_text_from_pdf(body)
                 except Exception:
-                    raise UrlReadError(422, "We downloaded a PDF but couldn't read it. Please upload the file instead.")
+                    raise UrlReadError(422, "We found a PDF file but couldn't read it. Please download it and use \"Upload file\" instead.")
             elif ctype in ("text/html", "application/xhtml+xml", "") or ctype.startswith("text/"):
                 text = html_to_job_text(body) if ctype != "text/plain" else body.decode("utf-8", errors="ignore")
             else:
-                raise UrlReadError(415, f"This link is not a web page (it is '{ctype}'). "
-                                        "Please use a link to the job ad page, or upload the file instead.")
+                raise UrlReadError(415, f"This link opens a file, not a job ad page. {PASTE_HINT}")
 
             if len(text.split()) < MIN_WORDS:
-                raise UrlReadError(422, "We opened the page but found almost no text. The job ad is probably "
-                                        "loaded with JavaScript or hidden behind a login. Please copy the text and paste it instead.")
+                raise UrlReadError(422, f"We opened the page, but the job text is hidden from us. Some websites only show it to people "
+                                        f"in a browser or after logging in. {PASTE_HINT}")
             return JobPage(text=text, host=host.removeprefix("www."))
 
-    raise UrlReadError(422, "This link redirects too many times. Please open it in your browser and copy the final link.")
+    raise UrlReadError(422, f"This link sends us from page to page, and we couldn't reach the job ad. {PASTE_HINT}")
 
 
 # ── HTML → text ───────────────────────────────────────────────────────────────

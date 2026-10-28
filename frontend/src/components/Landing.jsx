@@ -314,16 +314,16 @@ export default function Landing({ onStart, user, onUpgrade }) {
       })
       if (!res.ok) {
         const d = await res.json().catch(() => ({}))
-        if (res.status === 429 && !d.detail) throw new Error('Too many links in a short time. Please wait a minute and try again.')
-        throw new Error(typeof d.detail === 'string' ? d.detail : 'Could not read this link. Please paste the text instead.')
+        if (res.status === 429) throw new Error("You've tried a lot of links in a short time. Please wait a minute and try again.")
+        throw new Error(typeof d.detail === 'string' ? d.detail : "Sorry, we couldn't read this link. No problem: just open the job ad in your browser, copy the text and paste it here.")
       }
       const data = await res.json()
       setJd(data.text || ''); setJdFile(null); setJdSource(data.source || null)
       setJdInputMode(null)
     } catch (err) {
       setJdError(err.message === 'Failed to fetch'
-        ? 'Could not reach the MockMate server. Please check your internet connection.'
-        : err.message || 'Could not read this link.')
+        ? "We can't reach MockMate right now. Please check your internet connection and try again."
+        : err.message || "Sorry, we couldn't read this link.")
     } finally {
       setJdLoading(false)
     }
@@ -581,8 +581,17 @@ export default function Landing({ onStart, user, onUpgrade }) {
                           </button>
                         </form>
                         {jdError
-                          ? <p className="mt-1.5 text-red-400 text-xs leading-relaxed">{jdError}</p>
-                          : <p className="mt-1.5 text-slate-500 text-xs leading-relaxed">Works with most job sites. LinkedIn and Indeed usually need a login — for those, paste the text instead.</p>}
+                          ? <div className="mt-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
+                              <p className="text-amber-200 text-xs leading-relaxed">{jdError}</p>
+                              <button
+                                type="button"
+                                onClick={() => { setJdError(''); setJdInputMode('paste') }}
+                                className="mt-2 text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition-colors"
+                              >
+                                Paste the text instead →
+                              </button>
+                            </div>
+                          : <p className="mt-1.5 text-slate-500 text-xs leading-relaxed">Paste the link of the job ad itself, not the search results page. If a site doesn't allow reading, just copy the text and paste it.</p>}
                       </div>
                     )}
 
