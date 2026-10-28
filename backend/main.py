@@ -35,6 +35,7 @@ from helpers import (
 from database import init_db, upsert_user, save_session, get_sessions, get_session_detail, save_cv_profile, get_cv_profile, delete_session, get_connection
 from billing import router as billing_router
 from admin import router as admin_router
+from url_reader import fetch_job_page, UrlReadError
 
 
 load_dotenv()
@@ -231,6 +232,23 @@ async def extract_text(request: Request, file: UploadFile = File(...)):
 
     trimmed = trim_to_words(raw_text, MAX_CV_WORDS)
     return {"text": trimmed, "word_count": len(trimmed.split())}
+
+
+class ExtractUrlRequest(BaseModel):
+    url: str = Field(..., max_length=2000)
+
+
+@app.post("/extract-url")
+@limiter.limit("10/minute")
+async def extract_url(request: Request, req: ExtractUrlRequest, current_user: dict = Depends(get_current_user)):
+    # Logged-in users only, so the server can't be used as an anonymous proxy
+    try:
+        page = await fetch_job_page(req.url)
+    except UrlReadError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+
+    trimmed = trim_to_words(page.text, MAX_CV_WORDS)
+    return {"text": trimmed, "word_count": len(trimmed.split()), "source": page.host}
 
 
 @app.post("/parse-jd")
