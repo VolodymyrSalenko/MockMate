@@ -8,6 +8,7 @@ python-docx
 python-multipart
 psycopg[binary]
 httpx
+beautifulsoup4
 bcrypt
 python-jose[cryptography]
 slowapi
