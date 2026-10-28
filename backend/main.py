@@ -594,7 +594,7 @@ async def text_to_speech(request: Request, current_user: dict = Depends(get_curr
             headers={"xi-api-key": api_key, "Content-Type": "application/json"},
             json={
                 "text": text,
-                "model_id": "eleven_multilingual_v2",
+                "model_id": "eleven_v4_turbo",
                 "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
             },
         )
