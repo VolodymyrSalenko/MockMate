@@ -91,11 +91,14 @@ const CATEGORIES = [
 ]
 
 const INTERVIEW_TYPES = [
-  { value: 'full',       label: 'Full Interview',  desc: '2 behavioral, 2 technical, 1 motivation' },
-  { value: 'behavioral', label: 'Behavioral',      desc: '5 STAR situational questions' },
-  { value: 'technical',  label: 'Technical',       desc: '5 technical, progressively harder' },
-  { value: 'screening',  label: 'Screening Call',  desc: '5 easy intro questions' },
+  { value: 'full',       label: 'Full Interview',  desc: 'Warm-up, behavioral, technical, motivation' },
+  { value: 'behavioral', label: 'Behavioral',      desc: 'STAR situational questions' },
+  { value: 'technical',  label: 'Technical',       desc: 'Technical, progressively harder' },
+  { value: 'screening',  label: 'Screening Call',  desc: 'Easy intro questions' },
 ]
+
+const QUESTION_COUNTS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+const MINUTES_PER_QUESTION = 2
 
 const DIFFICULTY_INFO = {
   Junior: 'Foundational · Learning potential',
@@ -192,6 +195,7 @@ export default function Landing({ onStart, user, onUpgrade }) {
   const [difficulty,    setDifficulty]    = useState('Mid')
   const [language,      setLanguage]      = useState('en-US')
   const [interviewType, setInterviewType] = useState('full')
+  const [questionCount, setQuestionCount] = useState(5)
   const [showTemplates, setShowTemplates] = useState(false)
 
   const [cvFile,      setCvFile]      = useState(null)
@@ -221,6 +225,8 @@ export default function Landing({ onStart, user, onUpgrade }) {
     if (urlType && INTERVIEW_TYPES.find(t => t.value === urlType)) setInterviewType(urlType)
     const urlDiff = p.get('difficulty')
     if (['Junior', 'Mid', 'Senior'].includes(urlDiff)) setDifficulty(urlDiff)
+    const urlCount = Number(p.get('questions'))
+    if (QUESTION_COUNTS.includes(urlCount)) setQuestionCount(urlCount)
     const urlLang = p.get('lang')
     if (LANGUAGES.find(l => l.code === urlLang)) setLanguage(urlLang)
     const urlTopic = p.get('topic')
@@ -244,9 +250,10 @@ export default function Landing({ onStart, user, onUpgrade }) {
       p.delete('topic')
     }
     p.set('difficulty', difficulty)
+    if (questionCount !== 5) p.set('questions', questionCount); else p.delete('questions')
     if (language !== 'en-US') p.set('lang', language); else p.delete('lang')
     window.history.replaceState({}, '', `?${p.toString()}`)
-  }, [tab, interviewType, difficulty, language, selectedCategory, companyName]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tab, interviewType, difficulty, language, selectedCategory, companyName, questionCount]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetchCVProfile().then(data => {
@@ -341,7 +348,7 @@ export default function Landing({ onStart, user, onUpgrade }) {
       const res = await fetch(`${BACKEND_URL}/parse-jd`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getStoredToken()}` },
-        body: JSON.stringify({ jd_text: jd, cv_text: cvText || null, difficulty, company_name: companyName.trim() || null, interview_type: interviewType, language }),
+        body: JSON.stringify({ jd_text: jd, cv_text: cvText || null, difficulty, company_name: companyName.trim() || null, interview_type: interviewType, language, question_count: questionCount }),
       })
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || 'Failed to parse JD') }
       onStart({ ...(await res.json()), difficulty, interview_type: interviewType, language })
@@ -359,7 +366,7 @@ export default function Landing({ onStart, user, onUpgrade }) {
       const res = await fetch(`${BACKEND_URL}/question-bank`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getStoredToken()}` },
-        body: JSON.stringify({ category: selectedCategory, difficulty, language }),
+        body: JSON.stringify({ category: selectedCategory, difficulty, language, question_count: questionCount }),
       })
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || 'Failed to load questions') }
       onStart({ ...(await res.json()), difficulty, interview_type: 'practice', language })
@@ -383,8 +390,9 @@ export default function Landing({ onStart, user, onUpgrade }) {
     </svg>
   )
 
-  // Shared level + language row used in both tabs
+  // Shared level + language + length settings used in both tabs
   const SettingsRow = () => (
+    <div className="space-y-4">
     <div className="grid grid-cols-2 gap-3">
       <div>
         <label className="block text-slate-600 dark:text-slate-400 text-xs font-semibold uppercase tracking-wide mb-1.5">Level</label>
@@ -416,6 +424,20 @@ export default function Landing({ onStart, user, onUpgrade }) {
           })}
         </div>
       </div>
+    </div>
+    <div>
+      <div className="flex items-baseline justify-between mb-1.5">
+        <label className="block text-slate-600 dark:text-slate-400 text-xs font-semibold uppercase tracking-wide">Questions</label>
+        <span className="text-slate-600 dark:text-slate-500 text-xs">
+          {questionCount} {questionCount === 1 ? 'question' : 'questions'} · about {questionCount * MINUTES_PER_QUESTION} min
+        </span>
+      </div>
+      <div className="flex gap-1">
+        {QUESTION_COUNTS.map(n => (
+          <button key={n} onClick={() => setQuestionCount(n)} className={pillCls(questionCount === n)}>{n}</button>
+        ))}
+      </div>
+    </div>
     </div>
   )
 

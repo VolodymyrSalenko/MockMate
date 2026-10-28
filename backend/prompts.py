@@ -42,30 +42,23 @@ Generate a JSON object with exactly this structure (no preamble, no markdown, no
   "candidate_name": "candidate's name if found in CV, otherwise 'Candidate'",
   "skills": ["skill1", "skill2", "skill3", "skill4", "skill5"],
   "seniority": "Junior/Mid/Senior/Lead",
-  "intro_message": "A warm 4-sentence intro message from Alex the interviewer. Format: greet candidate by name if known, introduce yourself as Alex, mention the role, say you'll ask 7 questions, then ask the first question verbatim.",
-  "questions": [
-    "Question 1",
-    "Question 2",
-    "Question 3",
-    "Question 4",
-    "Question 5",
-    "Question 6",
-    "Question 7"
-  ]
+  "intro_message": "A warm 4-sentence intro message from Alex the interviewer. Format: greet candidate by name if known, introduce yourself as Alex, mention the role, say you'll ask {question_count} question(s), then ask the first question verbatim.",
+  "questions": ["Question 1", "Question 2", "..."]
 }}
 
 Important question style rules:
+- The "questions" list must contain exactly {question_count} question(s).
 - Every question must be one concise sentence — no multi-part questions, no long preambles.
 - If a CV is provided, make questions specific to the candidate's actual experience, companies, and projects. Do not make up details not in the CV."""
 
 INTERVIEW_TYPE_PROMPTS = {
-    "full":        "Generate exactly 7 questions in this order: (1) a warmup question — 'Tell me about yourself and your background.' or a natural variant, (2) a follow-up on the candidate's most recent or most relevant experience, (3) two behavioral STAR questions ('Tell me about a time when...'), (4) two technical questions based on the top skills, (5) one motivation question about why they want this role. Keep every question one concise, direct sentence — no multi-part questions.",
-    "behavioral":  "Generate 5 behavioral STAR questions ONLY. Each must ask about a specific past situation ('Tell me about a time when...', 'Describe a situation where...'). No technical questions.",
-    "technical":   "Generate 5 technical questions ONLY, progressively harder. Focus on the top skills from the job description. Include at least one system design or architecture question if the role is senior.",
-    "screening":   "Generate 5 easy screening questions: background intro, motivation for applying, key skills overview, availability/work style, and one simple technical question. Keep them brief and conversational.",
+    "full":        "Generate exactly {n} question(s). Start with a warmup question — 'Tell me about yourself and your background.' or a natural variant. Then mix a follow-up on the candidate's most recent or most relevant experience, behavioral STAR questions ('Tell me about a time when...') and technical questions based on the top skills, in roughly equal parts. If there are 4 or more questions, end with one motivation question about why they want this role. Keep every question one concise, direct sentence — no multi-part questions.",
+    "behavioral":  "Generate exactly {n} behavioral STAR question(s) ONLY. Each must ask about a specific past situation ('Tell me about a time when...', 'Describe a situation where...'). No technical questions.",
+    "technical":   "Generate exactly {n} technical question(s) ONLY, progressively harder. Focus on the top skills from the job description. Include at least one system design or architecture question if the role is senior.",
+    "screening":   "Generate exactly {n} easy screening question(s), chosen in this order of priority: background intro, motivation for applying, key skills overview, availability/work style, simple technical questions. Keep them brief and conversational.",
 }
 
-QUESTION_BANK_PROMPT = """You are generating 5 targeted interview practice questions.
+QUESTION_BANK_PROMPT = """You are generating {question_count} targeted interview practice question(s).
 
 {language_instruction}
 
@@ -74,20 +67,14 @@ Difficulty: {difficulty}
 
 {difficulty_context}
 
-Generate exactly 5 interview questions for this category. Make them progressively challenging. Return ONLY this JSON (no preamble, no markdown, no backticks):
+Generate exactly {question_count} interview question(s) for this category. Make them progressively challenging. Return ONLY this JSON (no preamble, no markdown, no backticks):
 {{
   "role": "{category} Practice",
   "candidate_name": "Candidate",
   "skills": ["skill1", "skill2", "skill3", "skill4", "skill5"],
   "seniority": "{difficulty}",
-  "intro_message": "A warm 4-sentence intro from Alex: greet candidate, say you're Alex, mention this is {category} practice at {difficulty} level, mention 5 questions, then ask the first question verbatim.",
-  "questions": [
-    "Question 1",
-    "Question 2",
-    "Question 3",
-    "Question 4",
-    "Question 5"
-  ]
+  "intro_message": "A warm 4-sentence intro from Alex: greet candidate, say you're Alex, mention this is {category} practice at {difficulty} level, mention {question_count} question(s), then ask the first question verbatim.",
+  "questions": ["Question 1", "Question 2", "..."]
 }}
 
 Category guidelines:

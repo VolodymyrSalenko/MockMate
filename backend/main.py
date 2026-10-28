@@ -136,6 +136,13 @@ def check_ai_consent(user_id: str):
 
 # --- Request models ---
 
+MIN_QUESTIONS, MAX_QUESTIONS, DEFAULT_QUESTIONS = 1, 10, 5
+
+
+def questions_phrase(n: int) -> str:
+    return f"{n} question" if n == 1 else f"{n} questions"
+
+
 class ParseJDRequest(BaseModel):
     jd_text: str = Field(..., max_length=20000)
     cv_text: Optional[str] = Field(None, max_length=20000)
@@ -143,12 +150,14 @@ class ParseJDRequest(BaseModel):
     company_name: Optional[str] = Field(None, max_length=200)
     interview_type: Optional[str] = "full"
     language: Optional[str] = "en-US"
+    question_count: int = Field(DEFAULT_QUESTIONS, ge=MIN_QUESTIONS, le=MAX_QUESTIONS)
 
 
 class QuestionBankRequest(BaseModel):
     category: str = Field(..., max_length=200)
     difficulty: Optional[str] = "Mid"
     language: Optional[str] = "en-US"
+    question_count: int = Field(DEFAULT_QUESTIONS, ge=MIN_QUESTIONS, le=MAX_QUESTIONS)
 
 
 class Message(BaseModel):
@@ -160,7 +169,7 @@ class RespondRequest(BaseModel):
     history: List[Message]
     user_answer: str = Field(..., max_length=5000)
     current_question_index: int
-    questions: List[str]
+    questions: List[str] = Field(..., max_length=MAX_QUESTIONS)
     role: Optional[str] = Field("the position", max_length=200)
     cv_summary: Optional[str] = Field(None, max_length=5000)
     difficulty: Optional[str] = "Mid"
@@ -174,7 +183,7 @@ class QAPair(BaseModel):
 
 
 class DebriefRequest(BaseModel):
-    qa_pairs: List[QAPair]
+    qa_pairs: List[QAPair] = Field(..., max_length=MAX_QUESTIONS * 2)
     role: Optional[str] = Field("the position", max_length=200)
     language: Optional[str] = "en-US"
 
@@ -268,7 +277,8 @@ async def parse_jd(req: ParseJDRequest, current_user: dict = Depends(get_current
     difficulty_context = DIFFICULTY_QUESTION_CONTEXT.get(difficulty, DIFFICULTY_QUESTION_CONTEXT["Mid"])
 
     interview_type = req.interview_type or "full"
-    interview_type_context = INTERVIEW_TYPE_PROMPTS.get(interview_type, INTERVIEW_TYPE_PROMPTS["full"])
+    n = req.question_count
+    interview_type_context = INTERVIEW_TYPE_PROMPTS.get(interview_type, INTERVIEW_TYPE_PROMPTS["full"]).format(n=n)
 
     if req.company_name and req.company_name.strip():
         company_context = (
@@ -286,6 +296,7 @@ async def parse_jd(req: ParseJDRequest, current_user: dict = Depends(get_current
         company_context=company_context,
         difficulty_context=difficulty_context,
         interview_type_context=interview_type_context,
+        question_count=n,
         language_instruction=language_instruction(req.language or "en-US"),
     )
 
@@ -299,13 +310,13 @@ async def parse_jd(req: ParseJDRequest, current_user: dict = Depends(get_current
     candidate_name = data.get("candidate_name", "Candidate")
     questions = data.get("questions", [])
 
-    if len(questions) < 5:
-        raise HTTPException(status_code=500, detail="Could not generate 5 questions from JD")
+    if len(questions) < n:
+        raise HTTPException(status_code=500, detail="Could not generate enough questions from JD — please try again")
 
     intro_message = data.get("intro_message") or (
         f"Hi{', ' + candidate_name if candidate_name and candidate_name != 'Candidate' else ''}, "
         f"I am Alex, your interviewer today. We are looking for a {role}. "
-        f"I will ask you 5 questions. Take your time and speak clearly. "
+        f"I will ask you {questions_phrase(n)}. Take your time and speak clearly. "
         f"Here is your first question. {questions[0]}"
     )
 
@@ -316,7 +327,7 @@ async def parse_jd(req: ParseJDRequest, current_user: dict = Depends(get_current
     return {
         "role": role,
         "candidate_name": candidate_name,
-        "questions": questions[:5],
+        "questions": questions[:n],
         "intro_message": intro_message,
         "cv_summary": cv_summary,
     }
@@ -335,30 +346,32 @@ async def question_bank(request: Request, req: QuestionBankRequest, current_user
         category=req.category.strip(),
         difficulty=difficulty,
         difficulty_context=difficulty_context,
+        question_count=req.question_count,
         language_instruction=language_instruction(req.language or "en-US"),
     )
 
     try:
-        raw = chat(client, MODEL, [{"role": "user", "content": prompt}], max_tokens=800)
+        raw = chat(client, MODEL, [{"role": "user", "content": prompt}], max_tokens=1200)
         data = extract_json(raw)
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to generate questions — please try again")
 
+    n = req.question_count
     questions = data.get("questions", [])
-    if len(questions) < 5:
-        raise HTTPException(status_code=500, detail="Could not generate 5 questions for this category")
+    if len(questions) < n:
+        raise HTTPException(status_code=500, detail="Could not generate enough questions for this category — please try again")
 
     role = data.get("role", f"{req.category} Practice")
     intro_message = data.get("intro_message") or (
         f"Hi, I am Alex. Today we are practising {req.category} questions at {difficulty} level. "
-        f"I will ask you 5 questions. Take your time and speak clearly. "
+        f"I will ask you {questions_phrase(n)}. Take your time and speak clearly. "
         f"Here is your first question. {questions[0]}"
     )
 
     return {
         "role": role,
         "candidate_name": "Candidate",
-        "questions": questions[:5],
+        "questions": questions[:n],
         "intro_message": intro_message,
         "cv_summary": None,
         "difficulty": difficulty,
@@ -553,7 +566,8 @@ async def debrief(req: DebriefRequest, current_user: dict = Depends(get_current_
     ]
 
     try:
-        raw = chat(client, MODEL, messages, max_tokens=4000)
+        # Longer interviews need more room for per-answer feedback
+        raw = chat(client, MODEL, messages, max_tokens=min(8000, 2000 + 500 * len(req.qa_pairs)))
         data = extract_json(raw)
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to generate debrief — please try again")
@@ -580,7 +594,7 @@ async def text_to_speech(request: Request, current_user: dict = Depends(get_curr
             headers={"xi-api-key": api_key, "Content-Type": "application/json"},
             json={
                 "text": text,
-                "model_id": "eleven_multilingual_v2",
+                "model_id": "eleven_v4_turbo",
                 "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
             },
         )
