@@ -222,7 +222,7 @@ function fmtTime(s) {
 }
 
 export default function Interview({ sessionData, onComplete }) {
-  const { role, questions, intro_message, cv_summary, difficulty = 'Mid', language = 'en-US' } = sessionData
+  const { role, questions, question_plan, intro_message, cv_summary, difficulty = 'Mid', language = 'en-US' } = sessionData
 
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [history,         setHistory]        = useState([])
@@ -244,7 +244,7 @@ export default function Interview({ sessionData, onComplete }) {
   const canRecordRef         = useRef(false)
   const recordingStartRef    = useRef(null)
   const currentIndexRef      = useRef(0)
-  const followupGivenRef     = useRef(false)
+  const followupRef          = useRef(null)   // { first_answer, followup_question } while a follow-up is open
   const countdownIntervalRef = useRef(null)
   const elapsedIntervalRef   = useRef(null)
   const sessionStartRef      = useRef(Date.now())
@@ -333,10 +333,11 @@ export default function Interview({ sessionData, onComplete }) {
           user_answer: transcript,
           current_question_index: currentQuestionIndex,
           questions,
+          question_plan,
           role,
           cv_summary,
           difficulty,
-          allow_followup: !followupGivenRef.current,
+          allow_followup: !followupRef.current,
           language,
         }),
       })
@@ -349,7 +350,8 @@ export default function Interview({ sessionData, onComplete }) {
       setConversationLog(prev => [...prev, { role: 'assistant', content: reply }])
 
       if (followup) {
-        followupGivenRef.current = true
+        // Keep the first answer and the follow-up so the debrief sees the whole exchange
+        followupRef.current = { first_answer: transcript, followup_question: reply }
         setStatus('speaking')
         canRecordRef.current = false
         let followupDone = false
@@ -364,8 +366,8 @@ export default function Interview({ sessionData, onComplete }) {
         return
       }
 
-      followupGivenRef.current = false
-      const updatedPairs = [...qaPairs, { question: questions[idx], answer: transcript, analytics }]
+      const updatedPairs = [...qaPairs, { question: questions[idx], answer: transcript, analytics, ...(followupRef.current || {}) }]
+      followupRef.current = null
       setQaPairs(updatedPairs)
       setStatus('speaking')
       canRecordRef.current = false
@@ -397,7 +399,7 @@ export default function Interview({ sessionData, onComplete }) {
       setStatus('idle')
       canRecordRef.current = true
     }
-  }, [history, questions, qaPairs, speak, onComplete, role, cv_summary, difficulty, language])
+  }, [history, questions, question_plan, qaPairs, speak, onComplete, role, cv_summary, difficulty, language])
 
   const { start, stop, isListening, interimTranscript, isSupported: sttSupported } = useSTT({
     onFinalTranscript: handleFinalTranscript,

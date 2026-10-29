@@ -285,6 +285,9 @@ function AppInner() {
             difficulty={sessionData?.difficulty || 'Mid'}
             interviewType={sessionData?.interview_type || 'full'}
             language={sessionData?.language || 'en-US'}
+            questionPlan={sessionData?.question_plan || []}
+            requirements={sessionData?.requirements || []}
+            cvSummary={sessionData?.cv_summary || null}
             duration={duration}
             faceMetrics={faceMetrics}
             recording={recording}

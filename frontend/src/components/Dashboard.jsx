@@ -8,7 +8,7 @@ import { durationLabel } from '../utils/speechAnalytics'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import {
-  scoreBg, scoreColor, scoreHex, aiColor, aiBg,
+  scoreBg, scoreColor, scoreHex,
   formatDate, formatShort, difficultyBadge, typeBadge, langInfo, avgArr,
 } from '../utils/scoring'
 import { IconList, IconStar, IconTarget, IconTrophy, IconFlame, IconGlobe, IconBarChart, IconMic } from '../utils/icons'
@@ -35,10 +35,8 @@ function calcStreak(sessions) {
 // ── Interview Readiness Score ─────────────────────────────────────────────────
 function calcReadiness(sessions) {
   if (!sessions.length) return 0
-  const scored   = sessions.filter(s => s.overall_score != null)
-  const aiScored = sessions.filter(s => s.ai_score != null)
+  const scored     = sessions.filter(s => s.overall_score != null)
   const avgContent = avgArr(scored.map(s => s.overall_score)) || 0
-  const avgAI      = avgArr(aiScored.map(s => s.ai_score))    || 0
   const streak     = calcStreak(sessions)
 
   // Trend: compare last 3 vs previous 3
@@ -48,12 +46,11 @@ function calcReadiness(sessions) {
     ? (avgArr(last3) > avgArr(prev3) + 0.3 ? 10 : avgArr(last3) < avgArr(prev3) - 0.3 ? 0 : 5)
     : 5
 
-  const contentPart  = (avgContent / 10) * 40   // max 40
-  const aiPart       = (avgAI / 100)     * 20   // max 20
+  const contentPart  = (avgContent / 10) * 60   // max 60
   const streakPart   = Math.min(streak * 4, 20) // max 20
   const volumePart   = Math.min(sessions.length * 2, 10) // max 10
 
-  return Math.min(Math.round(contentPart + aiPart + trendBonus + streakPart + volumePart), 100)
+  return Math.min(Math.round(contentPart + trendBonus + streakPart + volumePart), 100)
 }
 
 function readinessColor(r) { return r >= 75 ? 'text-emerald-400' : r >= 50 ? 'text-yellow-400' : 'text-red-400' }
@@ -86,20 +83,13 @@ function ScoreChart({ sessions }) {
     .map(s => ({
       date:    formatShort(s.created_at),
       content: parseFloat(parseFloat(s.overall_score).toFixed(1)),
-      ai:      s.ai_score != null ? parseFloat((s.ai_score / 10).toFixed(1)) : null,
       role:    s.role || '',
     }))
 
   return (
     <div className="glass border border-slate-200 dark:border-slate-700/40 rounded-2xl p-6 h-full">
-      <div className="flex items-center justify-between mb-1">
-        <p className="text-slate-900 dark:text-white font-bold">Score Progression</p>
-        <div className="flex items-center gap-3 text-xs text-slate-500">
-          <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-emerald-500 inline-block rounded" /> Content</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-violet-400 inline-block rounded" /> AI /10</span>
-        </div>
-      </div>
-      <p className="text-slate-600 dark:text-slate-400 text-xs mb-4">Last {data.length} interviews (AI score ÷10 for scale)</p>
+      <p className="text-slate-900 dark:text-white font-bold mb-1">Score Progression</p>
+      <p className="text-slate-600 dark:text-slate-400 text-xs mb-4">Last {data.length} interviews</p>
 
       {data.length < 2 ? (
         <div className="flex items-center justify-center h-36 text-slate-600 dark:text-slate-400 text-sm">Complete more interviews to see your trend</div>
@@ -113,13 +103,11 @@ function ScoreChart({ sessions }) {
               contentStyle={tooltipStyle}
               labelStyle={{ color: theme === 'dark' ? '#e2e8f0' : '#1e293b', fontWeight: 700, fontSize: 11 }}
               itemStyle={{ fontSize: 11, color: theme === 'dark' ? '#94a3b8' : '#475569' }}
-              formatter={(v, name) => [`${v}/10`, name === 'content' ? 'Content Score' : 'AI Score (÷10)']}
+              formatter={(v) => [`${v}/10`, 'Score']}
             />
             <Line type="monotone" dataKey="content" stroke="#10b981" strokeWidth={2.5}
               dot={({ cx, cy, payload, key }) => <circle key={key} cx={cx} cy={cy} r={4} fill={scoreHex(payload.content)} stroke="#020617" strokeWidth={2} />}
               activeDot={{ r: 6, fill: '#10b981' }} />
-            <Line type="monotone" dataKey="ai" stroke="#a78bfa" strokeWidth={2} strokeDasharray="4 3"
-              dot={false} activeDot={{ r: 5, fill: '#a78bfa' }} connectNulls />
           </LineChart>
         </ResponsiveContainer>
       )}
@@ -129,10 +117,9 @@ function ScoreChart({ sessions }) {
 
 // ── Skill benchmark radar ─────────────────────────────────────────────────────
 function SkillBenchmark({ sessions }) {
-  const valid = sessions.filter(s => s.overall_score != null || s.ai_score != null)
+  const valid = sessions.filter(s => s.overall_score != null)
   const skillData = [
-    { skill: 'Content',     value: valid.length ? Math.round((avgArr(valid.filter(s=>s.overall_score!=null).map(s=>s.overall_score)) || 0) * 10) : 0 },
-    { skill: 'AI Score',    value: valid.length ? Math.round(avgArr(valid.filter(s=>s.ai_score!=null).map(s=>s.ai_score)) || 0) : 0 },
+    { skill: 'Content',     value: valid.length ? Math.round((avgArr(valid.map(s=>s.overall_score)) || 0) * 10) : 0 },
     { skill: 'Eye Contact', value: valid.length ? Math.round(avgArr(sessions.filter(s=>s.eye_contact_pct!=null).map(s=>s.eye_contact_pct)) || 0) : 0 },
     { skill: 'Confidence',  value: valid.length ? Math.round((avgArr(sessions.filter(s=>s.face_confidence_score!=null).map(s=>s.face_confidence_score)) || 0) * 10) : 0 },
     { skill: 'Stability',   value: valid.length ? Math.round(avgArr(sessions.filter(s=>s.head_stability_pct!=null).map(s=>s.head_stability_pct)) || 0) : 0 },
@@ -342,8 +329,6 @@ export default function Dashboard({ onNavigate }) {
   const bestSession  = scored.length ? scored.reduce((b, s) => s.overall_score > b.overall_score ? s : b) : null
   const totalSeconds = sessions.reduce((a, s) => a + (s.duration_seconds || 0), 0)
   const thisMonth    = sessions.filter(s => { const d = new Date(s.created_at), n = new Date(); return d.getMonth()===n.getMonth()&&d.getFullYear()===n.getFullYear() }).length
-  const aiScored     = sessions.filter(s => s.ai_score != null)
-  const avgAI        = aiScored.length ? Math.round(avgArr(aiScored.map(s => s.ai_score))) : null
   const streak       = calcStreak(sessions)
   const readiness    = calcReadiness(sessions)
   const recent       = sessions.slice(0, 3)
@@ -428,11 +413,10 @@ export default function Dashboard({ onNavigate }) {
           </div>
         ) : (
           <>
-            {/* ── Step 1: Stats (6 cards) ── */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {/* ── Step 1: Stats (4 cards) ── */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <StatCard icon={<IconList className="w-4 h-4" />}    label="Sessions"      value={sessions.length}  sub={thisMonth ? `${thisMonth} this month · ${durationLabel(totalSeconds)}` : durationLabel(totalSeconds)} />
               <StatCard icon={<IconStar className="w-4 h-4" />}    label="Avg Score"     value={avgScore ? `${avgScore.toFixed(1)}/10` : '–'} sub="Content quality" color={avgScore ? scoreColor(avgScore) : 'text-slate-500'} />
-              <StatCard icon={<IconTarget className="w-4 h-4" />}  label="Avg AI"        value={avgAI != null ? `${avgAI}` : '–'} sub="/100 overall" color={avgAI != null ? aiColor(avgAI) : 'text-slate-500'} />
               <StatCard
                 icon={<IconTrophy className="w-4 h-4" />} label="Best Session"
                 value={bestSession ? parseFloat(bestSession.overall_score).toFixed(1) : '–'}
@@ -484,9 +468,6 @@ export default function Dashboard({ onNavigate }) {
                       <p className="text-slate-700 dark:text-slate-200 text-sm font-semibold truncate">{s.role || 'Interview'}</p>
                       <p className="text-slate-600 dark:text-slate-400 text-xs">{formatDate(s.created_at)} · {s.difficulty || 'Mid'} · {langInfo(s.language||'en-US').flag}</p>
                     </div>
-                    {s.ai_score != null && (
-                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full border flex-shrink-0 ${aiBg(s.ai_score)}`}>AI {Math.round(s.ai_score)}</span>
-                    )}
                     {/* Delete control */}
                     {confirmDelete === s.id ? (
                       <div className="flex items-center gap-1 flex-shrink-0">
