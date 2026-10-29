@@ -1,18 +1,8 @@
 import { useState, useEffect, useRef } from "react";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  Cell,
-} from "recharts";
 import { wpmColor, durationLabel } from "../utils/speechAnalytics";
 import { saveSessionToDB } from "../utils/api";
 import { getStoredToken } from "../context/AuthContext";
 import RetryModal from "./RetryModal";
-import { scoreAllAnswers } from "../utils/scoring";
 import { BACKEND_URL } from "../utils/config";
 import { useTheme } from "../context/ThemeContext";
 
@@ -85,35 +75,8 @@ function OverallScoreBadge({ score }) {
   );
 }
 
-function StarTracker({ star }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="text-slate-600 dark:text-slate-400 text-xs font-semibold">STAR:</span>
-      {[
-        ["situation", "S"],
-        ["task", "T"],
-        ["action", "A"],
-        ["result", "R"],
-      ].map(([key, label]) => (
-        <span
-          key={key}
-          title={key}
-          className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black transition-all ${
-            star[key]
-              ? "bg-gradient-to-br from-emerald-500 to-teal-400 text-white shadow-sm shadow-emerald-500/40"
-              : "bg-slate-800 text-slate-600 border border-slate-700"
-          }`}
-        >
-          {label}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function SpeechAnalyticsPanel({ analytics, questionIndex }) {
+function SpeechAnalyticsPanel({ analytics }) {
   if (!analytics) return null;
-  const isBehavioral = questionIndex <= 1;
   const topFillers = Object.entries(analytics.fillerCounts || {})
     .sort((a, b) => b[1] - a[1])
     .slice(0, 4);
@@ -180,7 +143,6 @@ function SpeechAnalyticsPanel({ analytics, questionIndex }) {
           </div>
         </div>
       )}
-      {isBehavioral && analytics.star && <StarTracker star={analytics.star} />}
       {analytics.wpm > 0 && (
         <p className="text-xs text-slate-600 dark:text-slate-400">
           {analytics.wpm < 100
@@ -194,93 +156,310 @@ function SpeechAnalyticsPanel({ analytics, questionIndex }) {
   );
 }
 
-function AnswerCard({ item, index, role, onRetry }) {
-  const [showIdeal, setShowIdeal] = useState(false);
+const SCORE_PARTS = [
+  { key: "relevance", label: "Relevance" },
+  { key: "examples", label: "Examples" },
+  { key: "clarity", label: "Clarity" },
+];
+
+// How the answer score was built: the average of three criteria
+function ScoreBreakdown({ scores }) {
+  if (!scores) return null;
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      {SCORE_PARTS.map(({ key, label }) => {
+        const s = scores[key];
+        if (s == null) return null;
+        const bar = s >= 8 ? "bg-emerald-500" : s >= 5 ? "bg-amber-400" : "bg-red-500";
+        return (
+          <div key={key}>
+            <div className="flex justify-between text-xs mb-1">
+              <span className="text-slate-600 dark:text-slate-400 font-semibold">{label}</span>
+              <span className="text-slate-700 dark:text-slate-300 font-bold">{s}</span>
+            </div>
+            <div className="h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+              <div className={`h-full rounded-full ${bar}`} style={{ width: `${s * 10}%` }} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const STAR_PARTS = [
+  { key: "situation", label: "Situation" },
+  { key: "task", label: "Task" },
+  { key: "action", label: "Action" },
+  { key: "result", label: "Result" },
+];
+
+// Which STAR parts the answer contained (only for experience questions)
+function StarChecklist({ star }) {
+  if (!star) return null;
+  return (
+    <div>
+      <p className="text-xs text-slate-600 dark:text-slate-400 font-semibold mb-1.5">STAR structure</p>
+      <div className="flex flex-wrap gap-1.5">
+        {STAR_PARTS.map(({ key, label }) => (
+          <span
+            key={key}
+            className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${
+              star[key]
+                ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-500 dark:text-emerald-400"
+                : "bg-red-500/10 border-red-500/30 text-red-500 dark:text-red-400"
+            }`}
+          >
+            {star[key] ? "✓" : "✗"} {label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const DECISIONS = {
+  yes:   { label: "Yes — next round", icon: "✅", cls: "border-emerald-500/30 text-emerald-500 dark:text-emerald-400" },
+  maybe: { label: "Maybe",            icon: "🤔", cls: "border-amber-500/30 text-amber-500 dark:text-amber-400" },
+  no:    { label: "Not yet",          icon: "✋", cls: "border-red-500/30 text-red-500 dark:text-red-400" },
+};
+
+// "Would a recruiter invite you to the next round?"
+function HiringDecision({ decision }) {
+  const d = decision && DECISIONS[decision.decision];
+  if (!d) return null;
+  return (
+    <div className={`rounded-2xl border p-4 ${d.cls.split(" ")[0]}`}>
+      <p className="text-slate-600 dark:text-slate-400 text-xs font-bold uppercase tracking-widest mb-1.5">
+        Would a recruiter invite you to the next round?
+      </p>
+      <p className={`text-lg font-black mb-1 ${d.cls.split(" ").slice(1).join(" ")}`}>
+        {d.icon} {d.label}
+      </p>
+      <p className="text-slate-600 dark:text-slate-300 text-sm leading-relaxed">{decision.reason}</p>
+    </div>
+  );
+}
+
+// Block 1: the one score, the recruiter's decision and the main takeaways
+function SummaryCard({ debrief }) {
   return (
     <div
-      className="glass border border-slate-200 dark:border-slate-700/40 rounded-3xl p-4 sm:p-6 space-y-4 hover:border-slate-400 dark:hover:border-slate-600/60 transition-all duration-300 animate-fade-up"
-      style={{ animationDelay: `${index * 0.08}s` }}
+      className="glass border border-slate-200 dark:border-slate-700/40 rounded-3xl p-5 sm:p-8 space-y-6 animate-fade-up"
+      style={{ animationDelay: "0.05s", boxShadow: "0 0 60px rgba(16,185,129,0.08)" }}
     >
+      <div className="flex flex-col sm:flex-row items-center gap-6">
+        <OverallScoreBadge score={debrief.overall_score} />
+        <div className="flex-1 w-full space-y-4">
+          <HiringDecision decision={debrief.hiring_decision} />
+          <p className="text-slate-600 dark:text-slate-300 text-sm leading-relaxed">{debrief.summary}</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+          <p className="text-emerald-500 dark:text-emerald-400 text-xs font-bold uppercase tracking-widest mb-2">
+            🏆 Top Strength
+          </p>
+          <p className="text-slate-700 dark:text-slate-200 text-sm leading-relaxed">{debrief.top_strength}</p>
+        </div>
+        <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
+          <p className="text-amber-500 dark:text-amber-400 text-xs font-bold uppercase tracking-widest mb-2">
+            🎯 Top Improvement
+          </p>
+          <p className="text-slate-700 dark:text-slate-200 text-sm leading-relaxed">{debrief.top_improvement}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function scoreTone(score) {
+  return score >= 8
+    ? { border: "border-emerald-500/40 hover:border-emerald-500/70", text: "text-emerald-500 dark:text-emerald-400" }
+    : score >= 5
+      ? { border: "border-amber-500/40 hover:border-amber-500/70", text: "text-amber-500 dark:text-amber-400" }
+      : { border: "border-red-500/40 hover:border-red-500/70", text: "text-red-500 dark:text-red-400" };
+}
+
+// Block 2: one tile per question; clicking opens the full breakdown
+function AnswerTile({ item, index, onOpen }) {
+  const tone = scoreTone(item.score);
+  return (
+    <button
+      onClick={onOpen}
+      className={`glass border ${tone.border} rounded-2xl p-4 text-left flex flex-col gap-2 transition-all hover:-translate-y-0.5 hover:shadow-lg animate-fade-up`}
+      style={{ animationDelay: `${0.1 + index * 0.05}s` }}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-bold uppercase tracking-widest text-slate-500">
+          Q{index + 1}
+          {item.followup_question && (
+            <span className="ml-2 normal-case tracking-normal font-semibold text-slate-400">· follow-up</span>
+          )}
+        </span>
+        <span className={`text-xl font-black ${tone.text}`}>{parseFloat(item.score).toFixed(1)}</span>
+      </div>
+      <p className="text-slate-700 dark:text-slate-200 text-sm font-semibold leading-snug line-clamp-3">
+        {item.question}
+      </p>
+      {item.competency && (
+        <p className="text-xs text-slate-500 line-clamp-1">Tests: {item.competency}</p>
+      )}
+      <div className="mt-auto pt-1 flex items-center justify-between gap-2">
+        {item.star ? (
+          <span className="flex gap-1" title="STAR structure">
+            {STAR_PARTS.map(({ key, label }) => (
+              <span
+                key={key}
+                className={`w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center ${
+                  item.star[key]
+                    ? "bg-emerald-500 text-white"
+                    : "bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600"
+                }`}
+              >
+                {label[0]}
+              </span>
+            ))}
+          </span>
+        ) : (
+          <span />
+        )}
+        <span className="text-xs font-semibold text-slate-500">Open →</span>
+      </div>
+    </button>
+  );
+}
+
+// Everything about one answer: shown in the modal and in the PDF export
+function AnswerDetail({ item, index, onRetry }) {
+  return (
+    <div className="space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1">
-          <p className="text-xs text-emerald-400/70 font-bold uppercase tracking-widest mb-1.5">
+          <p className="text-xs text-emerald-500 dark:text-emerald-400/80 font-bold uppercase tracking-widest mb-1.5">
             Question {index + 1}
           </p>
-          <p className="text-slate-700 dark:text-slate-200 font-semibold text-sm leading-relaxed">
-            {item.question}
-          </p>
+          <p className="text-slate-800 dark:text-slate-100 font-semibold leading-relaxed">{item.question}</p>
+          {item.competency && <p className="text-xs text-slate-500 mt-1">Tests: {item.competency}</p>}
         </div>
         <ScoreBadge score={item.score} />
       </div>
 
+      <ScoreBreakdown scores={item.scores} />
+      <StarChecklist star={item.star} />
+
+      {item.followup_question && (
+        <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+          <span className="font-semibold">↪ Alex asked a follow-up:</span> “{item.followup_question}”
+        </p>
+      )}
+
       <div className="bg-slate-50 dark:bg-slate-900/50 rounded-2xl p-4 border border-slate-200 dark:border-slate-800/60">
-        <p className="text-xs text-slate-600 dark:text-slate-400 font-semibold mb-1.5">
-          Your Answer Summary
-        </p>
-        <p className="text-slate-600 dark:text-slate-300 text-sm leading-relaxed">
-          {item.answer_summary}
-        </p>
+        <p className="text-xs text-slate-600 dark:text-slate-400 font-semibold mb-1.5">What you said</p>
+        <p className="text-slate-600 dark:text-slate-300 text-sm leading-relaxed">{item.answer_summary}</p>
       </div>
 
       <div>
         <p className="text-xs text-slate-600 dark:text-slate-400 font-semibold mb-1.5">Feedback</p>
-        <p className="text-slate-600 dark:text-slate-300 text-sm leading-relaxed">
-          {item.feedback}
-        </p>
+        <p className="text-slate-600 dark:text-slate-300 text-sm leading-relaxed">{item.feedback}</p>
       </div>
 
       <div className="bg-emerald-500/8 border border-emerald-500/20 rounded-2xl p-4">
-        <p className="text-xs text-emerald-400 font-bold mb-1.5">💡 Pro Tip</p>
-        <p className="text-emerald-200/90 text-sm leading-relaxed">
-          {item.tip}
-        </p>
+        <p className="text-xs text-emerald-500 dark:text-emerald-400 font-bold mb-1.5">💡 Tip</p>
+        <p className="text-slate-700 dark:text-emerald-200/90 text-sm leading-relaxed">{item.tip}</p>
       </div>
 
-      {/* Ideal answer toggle */}
       {item.ideal_answer && (
-        <div>
-          <button
-            onClick={() => setShowIdeal((o) => !o)}
-            className="w-full flex items-center justify-between px-4 py-2.5 glass-light border border-slate-200 dark:border-slate-700/40 rounded-2xl text-sm text-slate-600 dark:text-slate-400 hover:border-amber-500/30 hover:text-slate-700 dark:hover:text-slate-300 transition-all"
-          >
-            <span className="flex items-center gap-2">
-              <span>⭐</span>{" "}
-              <span className="text-xs font-semibold">
-                See model answer (9/10)
-              </span>
-            </span>
-            <span className="text-xs">{showIdeal ? "▲" : "▼"}</span>
-          </button>
-          {showIdeal && (
-            <div
-              className="mt-2 bg-amber-500/8 border border-amber-500/20 rounded-2xl p-4 animate-fade-up"
-              style={{ animationDuration: "0.2s" }}
-            >
-              <p className="text-xs text-amber-400 font-bold mb-1.5">
-                Model Answer
-              </p>
-              <p className="text-amber-200/90 text-sm leading-relaxed">
-                {item.ideal_answer}
-              </p>
-            </div>
+        <div className="bg-amber-500/8 border border-amber-500/20 rounded-2xl p-4">
+          <p className="text-xs text-amber-500 dark:text-amber-400 font-bold mb-1.5">⭐ Your answer, improved (9/10)</p>
+          <p className="text-slate-700 dark:text-amber-200/90 text-sm leading-relaxed">{item.ideal_answer}</p>
+          {item.ideal_answer.includes("[") && (
+            <p className="text-xs text-amber-600 dark:text-amber-400/70 mt-2">
+              Replace the [brackets] with your own real details.
+            </p>
           )}
         </div>
       )}
 
-      {/* Retry button */}
-      <button
-        onClick={() => onRetry(item.question, item.score)}
-        className="w-full flex items-center justify-center gap-2 py-2.5 glass-light border border-slate-200 dark:border-slate-700/40 rounded-2xl text-slate-600 dark:text-slate-400 hover:border-emerald-500/30 hover:text-emerald-400 text-xs font-semibold transition-all"
-      >
-        🔄 Retry this question
-      </button>
+      {item.analytics && <SpeechAnalyticsPanel analytics={item.analytics} />}
 
-      {item.analytics && (
-        <SpeechAnalyticsPanel
-          analytics={item.analytics}
-          questionIndex={index}
-        />
+      {onRetry && (
+        <button
+          onClick={onRetry}
+          className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white rounded-2xl text-sm font-bold transition-all shadow-md shadow-emerald-500/25"
+        >
+          🔄 Try this question again
+        </button>
       )}
+    </div>
+  );
+}
+
+function AnswerModal({ answers, index, onClose, onNavigate, onRetry }) {
+  const item = answers[index];
+  const hasPrev = index > 0;
+  const hasNext = index < answers.length - 1;
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+      else if (e.key === "ArrowLeft" && hasPrev) onNavigate(index - 1);
+      else if (e.key === "ArrowRight" && hasNext) onNavigate(index + 1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [index, hasPrev, hasNext, onClose, onNavigate]);
+
+  const navCls =
+    "px-3 py-1.5 rounded-xl text-xs font-semibold border border-slate-200 dark:border-slate-700/50 text-slate-600 dark:text-slate-300 hover:border-emerald-500/40 disabled:opacity-30 disabled:cursor-not-allowed transition-all";
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4"
+      style={{ background: "rgba(2,6,23,0.8)", backdropFilter: "blur(10px)" }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-2xl max-h-[90vh] flex flex-col glass bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700/50 rounded-3xl shadow-2xl animate-fade-up"
+        style={{ animationDuration: "0.2s" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-2 px-4 sm:px-6 py-3 border-b border-slate-200 dark:border-slate-700/40">
+          <div className="flex items-center gap-2">
+            <button className={navCls} disabled={!hasPrev} onClick={() => onNavigate(index - 1)}>← Prev</button>
+            <span className="text-xs text-slate-500 font-semibold">
+              {index + 1} / {answers.length}
+            </span>
+            <button className={navCls} disabled={!hasNext} onClick={() => onNavigate(index + 1)}>Next →</button>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 text-lg"
+          >
+            ×
+          </button>
+        </div>
+        <div className="overflow-y-auto px-4 sm:px-6 py-5">
+          <AnswerDetail item={item} index={index} onRetry={() => onRetry(index)} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Block 3: how you spoke and came across — collapsed by default
+function DeliverySection({ open, onToggle, children }) {
+  return (
+    <div className="glass border border-slate-200 dark:border-slate-700/40 rounded-3xl animate-fade-up" style={{ animationDelay: "0.2s" }}>
+      <button onClick={onToggle} className="w-full flex items-center justify-between gap-3 px-5 sm:px-6 py-4 text-left">
+        <span>
+          <span className="block text-slate-900 dark:text-white font-bold text-lg">🗣 How you spoke</span>
+          <span className="block text-slate-500 text-xs mt-0.5">Pace, filler words, body language and your recording</span>
+        </span>
+        <span className="text-slate-500 text-sm">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && <div className="px-3 sm:px-4 pb-4 space-y-4">{children}</div>}
     </div>
   );
 }
@@ -369,70 +548,6 @@ function OverallSpeechSummary({ qaPairs, sessionDuration }) {
           ✨ Zero filler words — excellent verbal discipline!
         </p>
       )}
-    </div>
-  );
-}
-
-function AnswerLengthChart({ answers }) {
-  const { theme } = useTheme();
-  const tooltipStyle = theme === 'dark'
-    ? { backgroundColor: 'rgba(15,23,42,0.95)', border: '1px solid rgba(51,65,85,0.6)', borderRadius: 12, backdropFilter: 'blur(12px)' }
-    : { backgroundColor: 'rgba(255,255,255,0.97)', border: '1px solid rgba(226,232,240,0.8)', borderRadius: 12 };
-  const data = answers.map((a, i) => ({
-    name: `Q${i + 1}`,
-    words: a.analytics?.wordCount || 0,
-    score: a.score,
-  }));
-  if (data.every((d) => d.words === 0)) return null;
-  return (
-    <div
-      className="glass border border-slate-200 dark:border-slate-700/40 rounded-3xl p-6 animate-fade-up"
-      style={{ animationDelay: "0.15s" }}
-    >
-      <p className="text-slate-900 dark:text-white font-bold mb-1">📊 Answer Length</p>
-      <p className="text-slate-600 dark:text-slate-400 text-xs mb-4">Bar colour = content score</p>
-      <ResponsiveContainer width="100%" height={160}>
-        <BarChart
-          data={data}
-          margin={{ top: 4, right: 8, left: -16, bottom: 0 }}
-        >
-          <XAxis
-            dataKey="name"
-            tick={{ fill: "#64748b", fontSize: 12 }}
-            axisLine={false}
-            tickLine={false}
-          />
-          <YAxis
-            tick={{ fill: "#475569", fontSize: 11 }}
-            axisLine={false}
-            tickLine={false}
-          />
-          <Tooltip
-            contentStyle={tooltipStyle}
-            labelStyle={{ color: theme === 'dark' ? "#e2e8f0" : "#1e293b", fontWeight: 700 }}
-            itemStyle={{ color: theme === 'dark' ? "#94a3b8" : "#475569" }}
-            formatter={(v) => [`${v} words`, "Length"]}
-          />
-          <Bar dataKey="words" radius={[6, 6, 0, 0]}>
-            {data.map((entry, i) => (
-              <Cell
-                key={i}
-                fill={
-                  entry.score >= 8
-                    ? "#10b981"
-                    : entry.score >= 5
-                      ? "#f59e0b"
-                      : "#ef4444"
-                }
-                fillOpacity={0.9}
-                style={{
-                  filter: `drop-shadow(0 0 4px ${entry.score >= 8 ? "#10b981" : entry.score >= 5 ? "#f59e0b" : "#ef4444"})`,
-                }}
-              />
-            ))}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
     </div>
   );
 }
@@ -655,6 +770,9 @@ export default function Debrief({
   difficulty,
   interviewType,
   language = "en-US",
+  questionPlan = [],
+  requirements = [],
+  cvSummary = null,
   duration,
   faceMetrics,
   recording,
@@ -667,25 +785,25 @@ export default function Debrief({
   const [exporting, setExporting] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [retryQ, setRetryQ] = useState(null);
+  const [openIndex, setOpenIndex] = useState(null);
+  const [deliveryOpen, setDeliveryOpen] = useState(false);
   const debriefRef = useRef(null);
   const shareCardRef = useRef(null);
   const savedToDB = useRef(false);
-
-  // AI Scoring Module (client-side scoring)
-  const selectedLanguage = (language || "en-US").slice(0, 2);
-  const rawAnswers = Array.isArray(qaPairs)
-    ? qaPairs.map((q) => q.answer || "")
-    : [];
-  const scoring = scoreAllAnswers(rawAnswers, selectedLanguage);
 
   useEffect(() => {
     const fetchDebrief = async () => {
       try {
         // :one: Clean Q/A pairs and prevent empty payload
+        // Each pair carries the follow-up exchange (if any) and the question's hidden rubric
         const cleanPairs = qaPairs
-          .map(({ question, answer }) => ({
+          .map(({ question, answer, first_answer, followup_question }, i) => ({
             question: question || "",
             answer: answer || "",
+            first_answer: first_answer || null,
+            followup_question: followup_question || null,
+            competency: questionPlan[i]?.competency || null,
+            strong_answer: questionPlan[i]?.strong_answer || null,
           }))
           .filter((p) => p.question && p.answer);
 
@@ -708,6 +826,10 @@ export default function Debrief({
             qa_pairs: cleanPairs,
             role: safeRole,
             language: normalizedLang,
+            difficulty,
+            interview_type: interviewType,
+            requirements,
+            cv_summary: cvSummary,
           }),
         });
 
@@ -719,6 +841,8 @@ export default function Debrief({
           data.answers = data.answers.map((a, i) => ({
             ...a,
             analytics: qaPairs[i]?.analytics || null,
+            followup_question: qaPairs[i]?.followup_question || null,
+            competency: questionPlan[i]?.competency || null,
           }));
         }
 
@@ -736,8 +860,6 @@ export default function Debrief({
             {
               faceMetrics: faceMetrics,
               language: normalizedLang,
-              aiScore: scoring.finalScore,
-              aiVerdict: scoring.verdict,
             },
           );
         }
@@ -757,6 +879,9 @@ export default function Debrief({
     if (!debriefRef.current) return;
     setExporting(true);
     try {
+      // While exporting, every answer and the delivery section are rendered in full;
+      // wait for that render and its fade-in animations before capturing
+      await new Promise((resolve) => setTimeout(resolve, 900));
       const [{ default: html2canvas }, jsPDFModule] = await Promise.all([
         import("html2canvas"),
         import("jspdf"),
@@ -855,6 +980,11 @@ export default function Debrief({
     );
   }
 
+  const hasDelivery =
+    qaPairs.some((p) => p.analytics) ||
+    (faceMetrics && faceMetrics.samplesCount >= 30) ||
+    Boolean(recording);
+
   if (error) {
     return (
       <div className="min-h-screen dark:bg-slate-950 flex flex-col items-center justify-center gap-4 px-4 relative overflow-hidden">
@@ -911,154 +1041,66 @@ export default function Debrief({
           </p>
         </div>
 
-        {/* Overall score */}
-        <div
-          className="glass border border-slate-200 dark:border-slate-700/40 rounded-3xl p-6 sm:p-10 flex flex-col items-center gap-6 animate-fade-up"
-          style={{
-            animationDelay: "0.05s",
-            boxShadow: "0 0 60px rgba(16,185,129,0.08)",
-          }}
-        >
-          <OverallScoreBadge score={debrief.overall_score} />
-          <div className="text-center max-w-lg">
-            <p className="text-slate-900 dark:text-white font-bold text-lg mb-2">Content Score</p>
-            <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">
-              {debrief.summary}
-            </p>
+        {/* Block 1: one score, recruiter decision, main takeaways */}
+        <SummaryCard debrief={debrief} />
+
+        {/* Block 2: one tile per question */}
+        <div>
+          <div className="flex items-end justify-between gap-3 mb-3 animate-fade-up" style={{ animationDelay: "0.1s" }}>
+            <h2 className="text-slate-900 dark:text-white font-black text-xl">Your answers</h2>
+            <p className="text-slate-500 text-xs">Click a question to see the full feedback</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {debrief.answers.map((item, i) => (
+              <AnswerTile key={i} item={item} index={i} onOpen={() => setOpenIndex(i)} />
+            ))}
           </div>
         </div>
 
-        {/* AI Scoring Section */}
-        <div
-          className="glass border border-slate-200 dark:border-slate-700/40 rounded-3xl p-6 sm:p-8 mt-10 animate-fade-up"
-          style={{
-            animationDelay: "0.15s",
-            boxShadow: "0 0 60px rgba(16,185,129,0.08)",
-          }}
-        >
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
-            AI Score: {scoring.finalScore}/100
-          </h2>
-
-          <p
-            className={
-              scoring.verdict.startsWith("Accepted")
-                ? "text-lg font-semibold text-emerald-400 mb-6"
-                : "text-lg font-semibold text-red-500 mb-6"
-            }
-          >
-            {scoring.verdict}
-          </p>
-
-          <div className="space-y-6">
-            {scoring.detailed.map((item, index) => (
-              <div
-                key={index}
-                className="bg-slate-100 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700/50 rounded-2xl p-5 shadow-inner"
-              >
-                <h4 className="text-slate-900 dark:text-white font-semibold text-lg mb-2">
-                  Answer {index + 1}:{" "}
-                  <span className="text-emerald-400">{item.score}/20</span>
-                </h4>
-
-                <ul className="list-disc ml-6 text-slate-600 dark:text-slate-400 text-sm space-y-1">
-                  {item.tips.map((tip, i) => (
-                    <li key={i}>{tip}</li>
-                  ))}
-                </ul>
+        {/* Full answer details — rendered only for the PDF export */}
+        {exporting && (
+          <div className="space-y-4">
+            {debrief.answers.map((item, i) => (
+              <div key={i} className="glass border border-slate-200 dark:border-slate-700/40 rounded-3xl p-5 sm:p-6">
+                <AnswerDetail item={item} index={i} />
               </div>
             ))}
           </div>
-        </div>
-
-        {/* Speech overview */}
-        <OverallSpeechSummary qaPairs={qaPairs} sessionDuration={duration} />
-
-        {/* Body language */}
-        <BodyLanguageCard metrics={faceMetrics} />
-
-        {/* Interview recording replay */}
-        {recording && (
-          <div className="glass border border-slate-200 dark:border-slate-700/40 rounded-3xl p-6 space-y-4 animate-fade-up">
-            <div>
-              <p className="text-slate-900 dark:text-white font-bold text-lg">
-                🎥 Interview Recording
-              </p>
-              <p className="text-slate-600 dark:text-slate-400 text-sm mt-1">
-                Review your webcam recording from this interview session.
-              </p>
-            </div>
-
-            <video
-              src={recording}
-              controls
-              className="w-full rounded-2xl border border-slate-700/50 bg-black"
-            />
-
-            <a
-              href={recording}
-              download={`MockMate-recording-${new Date().toISOString().slice(0, 10)}.webm`}
-              className="inline-flex items-center justify-center gap-2 glass-light border border-slate-200 dark:border-slate-700/50 hover:border-emerald-500/40 text-slate-600 dark:text-slate-300 hover:text-emerald-400 font-semibold px-5 py-3 rounded-2xl transition-all"
-            >
-              ⬇️ Download Recording
-            </a>
-          </div>
         )}
 
-        {/* Chart */}
-        <AnswerLengthChart answers={debrief.answers} />
+        {/* Block 3: delivery — speech, body language, recording */}
+        {hasDelivery && (
+          <DeliverySection open={deliveryOpen || exporting} onToggle={() => setDeliveryOpen((o) => !o)}>
+            <OverallSpeechSummary qaPairs={qaPairs} sessionDuration={duration} />
+            <BodyLanguageCard metrics={faceMetrics} />
+            {recording && !exporting && (
+              <div className="glass border border-slate-200 dark:border-slate-700/40 rounded-3xl p-6 space-y-4">
+                <div>
+                  <p className="text-slate-900 dark:text-white font-bold text-lg">
+                    🎥 Interview Recording
+                  </p>
+                  <p className="text-slate-600 dark:text-slate-400 text-sm mt-1">
+                    Review your webcam recording from this interview session.
+                  </p>
+                </div>
 
-        {/* Strength + Improvement */}
-        <div
-          className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-fade-up"
-          style={{ animationDelay: "0.2s" }}
-        >
-          <div
-            className="glass border border-emerald-500/20 rounded-3xl p-6"
-            style={{ boxShadow: "0 0 30px rgba(16,185,129,0.08)" }}
-          >
-            <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest mb-3">
-              🏆 Top Strength
-            </p>
-            <p className="text-slate-700 dark:text-slate-200 text-sm leading-relaxed">
-              {debrief.top_strength}
-            </p>
-          </div>
-          <div
-            className="glass border border-amber-500/20 rounded-3xl p-6"
-            style={{ boxShadow: "0 0 30px rgba(245,158,11,0.06)" }}
-          >
-            <p className="text-amber-400 text-xs font-bold uppercase tracking-widest mb-3">
-              🎯 Top Improvement
-            </p>
-            <p className="text-slate-700 dark:text-slate-200 text-sm leading-relaxed">
-              {debrief.top_improvement}
-            </p>
-          </div>
-        </div>
+                <video
+                  src={recording}
+                  controls
+                  className="w-full rounded-2xl border border-slate-700/50 bg-black"
+                />
 
-        {/* Answer breakdown */}
-        <div>
-          <h2
-            className="text-slate-900 dark:text-white font-black text-xl mb-4 animate-fade-up"
-            style={{ animationDelay: "0.25s" }}
-          >
-            Answer Breakdown
-          </h2>
-          <div className="space-y-4">
-            {debrief.answers.map((item, i) => (
-              <AnswerCard
-                key={i}
-                item={item}
-                index={i}
-                role={role}
-                onRetry={(question, originalScore) =>
-                  setRetryQ({ question, originalScore })
-                }
-              />
-            ))}
-          </div>
-        </div>
+                <a
+                  href={recording}
+                  download={`MockMate-recording-${new Date().toISOString().slice(0, 10)}.webm`}
+                  className="inline-flex items-center justify-center gap-2 glass-light border border-slate-200 dark:border-slate-700/50 hover:border-emerald-500/40 text-slate-600 dark:text-slate-300 hover:text-emerald-400 font-semibold px-5 py-3 rounded-2xl transition-all"
+                >
+                  ⬇️ Download Recording
+                </a>
+              </div>
+            )}
+          </DeliverySection>
+        )}
       </div>
 
       {/* Action buttons — outside ref */}
@@ -1136,12 +1178,36 @@ export default function Debrief({
         </button>
       </div>
 
+      {/* Answer breakdown modal */}
+      {openIndex != null && debrief.answers[openIndex] && (
+        <AnswerModal
+          answers={debrief.answers}
+          index={openIndex}
+          onClose={() => setOpenIndex(null)}
+          onNavigate={setOpenIndex}
+          onRetry={(i) => {
+            const item = debrief.answers[i];
+            setOpenIndex(null);
+            setRetryQ({
+              question: item.question,
+              originalScore: item.score,
+              competency: item.competency,
+              strongAnswer: questionPlan[i]?.strong_answer,
+            });
+          }}
+        />
+      )}
+
       {/* Retry modal */}
       {retryQ && (
         <RetryModal
           question={retryQ.question}
           originalScore={retryQ.originalScore}
           role={role}
+          difficulty={difficulty}
+          language={language}
+          competency={retryQ.competency}
+          strongAnswer={retryQ.strongAnswer}
           onClose={() => setRetryQ(null)}
         />
       )}

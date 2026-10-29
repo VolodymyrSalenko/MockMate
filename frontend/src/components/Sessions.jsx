@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { fetchSessions, fetchSessionDetail } from '../utils/api'
 import { durationLabel } from '../utils/speechAnalytics'
 import {
-  scoreBg, scoreHex as scoreGradient, aiColor, aiBg,
+  scoreBg, scoreHex as scoreGradient,
   formatDate, difficultyBadge, typeBadge, langInfo,
 } from '../utils/scoring'
 
@@ -107,21 +107,8 @@ function SessionDetail({ session }) {
         )}
       </div>
 
-      {/* AI score + Face */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {detail.ai_score != null && (
-          <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/60 rounded-2xl p-4">
-            <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mb-2">🤖 AI Score</p>
-            <div className="flex items-center gap-3">
-              <span className={`text-2xl font-black ${aiColor(detail.ai_score)}`}>
-                {Math.round(detail.ai_score)}<span className="text-slate-600 text-sm font-normal">/100</span>
-              </span>
-              {detail.ai_verdict && <p className="text-slate-400 text-xs leading-relaxed">{detail.ai_verdict}</p>}
-            </div>
-          </div>
-        )}
-        <FacePanel session={detail} />
-      </div>
+      {/* Face */}
+      <FacePanel session={detail} />
 
       {/* Per-answer breakdown */}
       {detail.answers?.length > 0 && (
@@ -149,9 +136,6 @@ function SessionDetail({ session }) {
                         <span className={`text-xs ${a.total_fillers === 0 ? 'text-emerald-400' : a.total_fillers <= 3 ? 'text-yellow-400' : 'text-red-400'}`}>
                           {a.total_fillers} fillers
                         </span>
-                      )}
-                      {a.ai_answer_score != null && (
-                        <span className={`text-xs font-semibold ${aiColor(a.ai_answer_score * 5)}`}>AI {Math.round(a.ai_answer_score)}/20</span>
                       )}
                     </div>
                     {fillers.length > 0 && (
@@ -202,11 +186,6 @@ function SessionCard({ session, index }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="text-slate-700 dark:text-slate-200 text-sm font-semibold truncate">{session.role || 'Interview'}</p>
-            {session.ai_score != null && (
-              <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${aiBg(session.ai_score)}`}>
-                AI {Math.round(session.ai_score)}
-              </span>
-            )}
             {session.face_confidence_score != null && (
               <span className="text-xs text-slate-500">👁 {parseFloat(session.face_confidence_score).toFixed(1)}</span>
             )}

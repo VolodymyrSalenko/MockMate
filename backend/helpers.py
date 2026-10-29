@@ -27,11 +27,13 @@ def trim_to_words(text: str, max_words: int) -> str:
     return " ".join(words[:max_words]) + "..."
 
 
-def chat(client, model: str, messages: list, max_tokens: int) -> str:
+def chat(client, model: str, messages: list, max_tokens: int, temperature: float | None = None) -> str:
+    extra = {"temperature": temperature} if temperature is not None else {}
     response = client.chat.completions.create(
         model=model,
         max_tokens=max_tokens,
         messages=messages,
+        **extra,
     )
     return response.choices[0].message.content
 

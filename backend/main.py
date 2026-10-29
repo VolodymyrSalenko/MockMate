@@ -20,6 +20,8 @@ from prompts import (
     DEBRIEF_PROMPT,
     INTERVIEW_TYPE_PROMPTS,
     QUESTION_BANK_PROMPT,
+    RESPOND_DECISION_PROMPT,
+    LEVEL_EXPECTATIONS,
     CV_PARSE_PROMPT,
     CV_ANALYSIS_PROMPT,
     language_instruction,
@@ -165,11 +167,26 @@ class Message(BaseModel):
     content: str = Field(..., max_length=5000)
 
 
+class QuestionPlan(BaseModel):
+    """Hidden evaluator notes for one question (what it tests, what good looks like)."""
+    question: str = Field("", max_length=2000)
+    competency: str = Field("", max_length=300)
+    strong_answer: str = Field("", max_length=1000)
+    red_flags: str = Field("", max_length=1000)
+
+
+class Requirement(BaseModel):
+    name: str = Field(..., max_length=200)
+    priority: str = Field("must", max_length=20)
+    cv_evidence: str = Field("unknown", max_length=20)
+
+
 class RespondRequest(BaseModel):
     history: List[Message]
     user_answer: str = Field(..., max_length=5000)
     current_question_index: int
     questions: List[str] = Field(..., max_length=MAX_QUESTIONS)
+    question_plan: Optional[List[QuestionPlan]] = Field(None, max_length=MAX_QUESTIONS)
     role: Optional[str] = Field("the position", max_length=200)
     cv_summary: Optional[str] = Field(None, max_length=5000)
     difficulty: Optional[str] = "Mid"
@@ -180,12 +197,58 @@ class RespondRequest(BaseModel):
 class QAPair(BaseModel):
     question: str = Field(..., max_length=2000)
     answer: str = Field(..., max_length=5000)
+    # Set when Alex asked a follow-up: the first (short/vague) answer and the follow-up question
+    first_answer: Optional[str] = Field(None, max_length=5000)
+    followup_question: Optional[str] = Field(None, max_length=1000)
+    competency: Optional[str] = Field(None, max_length=300)
+    strong_answer: Optional[str] = Field(None, max_length=1000)
 
 
 class DebriefRequest(BaseModel):
     qa_pairs: List[QAPair] = Field(..., max_length=MAX_QUESTIONS * 2)
     role: Optional[str] = Field("the position", max_length=200)
     language: Optional[str] = "en-US"
+    difficulty: Optional[str] = "Mid"
+    interview_type: Optional[str] = Field("full", max_length=30)
+    requirements: Optional[List[Requirement]] = Field(None, max_length=12)
+    cv_summary: Optional[str] = Field(None, max_length=5000)
+
+
+def normalize_questions(raw_questions, n: int):
+    """Accept questions as plain strings or {question, competency, ...} objects.
+
+    Returns (question texts, question plans) — the texts keep the old API shape,
+    the plans carry the hidden rubric used by /respond and /debrief.
+    """
+    texts, plans = [], []
+    for q in raw_questions or []:
+        if isinstance(q, str):
+            q = {"question": q}
+        if not isinstance(q, dict):
+            continue
+        text = str(q.get("question") or "").strip()
+        if not text:
+            continue
+        texts.append(text)
+        plans.append({
+            "question": text,
+            "competency": str(q.get("competency") or "")[:300],
+            "strong_answer": str(q.get("strong_answer") or "")[:1000],
+            "red_flags": str(q.get("red_flags") or "")[:1000],
+        })
+    return texts[:n], plans[:n]
+
+
+def normalize_requirements(raw) -> list:
+    reqs = []
+    for r in raw or []:
+        if isinstance(r, dict) and r.get("name"):
+            reqs.append({
+                "name": str(r["name"])[:200],
+                "priority": "nice" if r.get("priority") == "nice" else "must",
+                "cv_evidence": r.get("cv_evidence") if r.get("cv_evidence") in ("strong", "weak", "none") else "unknown",
+            })
+    return reqs[:12]
 
 
 # --- Endpoints ---
@@ -301,14 +364,15 @@ async def parse_jd(req: ParseJDRequest, current_user: dict = Depends(get_current
     )
 
     try:
-        raw = chat(client, MODEL, [{"role": "user", "content": prompt}], max_tokens=1200)
+        # Each question now carries a hidden rubric, so allow more room
+        raw = chat(client, MODEL, [{"role": "user", "content": prompt}], max_tokens=1200 + 150 * n)
         data = extract_json(raw)
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to generate questions — please try again")
 
     role = data.get("role", "the position")
     candidate_name = data.get("candidate_name", "Candidate")
-    questions = data.get("questions", [])
+    questions, question_plan = normalize_questions(data.get("questions"), n)
 
     if len(questions) < n:
         raise HTTPException(status_code=500, detail="Could not generate enough questions from JD — please try again")
@@ -322,12 +386,14 @@ async def parse_jd(req: ParseJDRequest, current_user: dict = Depends(get_current
 
     cv_summary = None
     if req.cv_text and req.cv_text.strip():
-        cv_summary = trim_to_words(req.cv_text, 200)
+        cv_summary = trim_to_words(strip_contact_pii(req.cv_text), 200)
 
     return {
         "role": role,
         "candidate_name": candidate_name,
-        "questions": questions[:n],
+        "questions": questions,
+        "question_plan": question_plan,
+        "requirements": normalize_requirements(data.get("requirements")),
         "intro_message": intro_message,
         "cv_summary": cv_summary,
     }
@@ -350,14 +416,14 @@ async def question_bank(request: Request, req: QuestionBankRequest, current_user
         language_instruction=language_instruction(req.language or "en-US"),
     )
 
+    n = req.question_count
     try:
-        raw = chat(client, MODEL, [{"role": "user", "content": prompt}], max_tokens=1200)
+        raw = chat(client, MODEL, [{"role": "user", "content": prompt}], max_tokens=800 + 150 * n)
         data = extract_json(raw)
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to generate questions — please try again")
 
-    n = req.question_count
-    questions = data.get("questions", [])
+    questions, question_plan = normalize_questions(data.get("questions"), n)
     if len(questions) < n:
         raise HTTPException(status_code=500, detail="Could not generate enough questions for this category — please try again")
 
@@ -371,7 +437,9 @@ async def question_bank(request: Request, req: QuestionBankRequest, current_user
     return {
         "role": role,
         "candidate_name": "Candidate",
-        "questions": questions[:n],
+        "questions": questions,
+        "question_plan": question_plan,
+        "requirements": [],
         "intro_message": intro_message,
         "cv_summary": None,
         "difficulty": difficulty,
@@ -403,34 +471,38 @@ async def respond(request: Request, req: RespondRequest, current_user: dict = De
     ]
     messages += [{"role": m.role, "content": m.content} for m in trimmed]
 
-    word_count = len(req.user_answer.strip().split())
-    needs_followup = req.allow_followup and word_count < 20 and idx < len(req.questions) - 1
-
-    if needs_followup:
-        instruction = (
-            "The candidate gave a very brief answer (under 20 words). "
-            "Gently ask them to elaborate in one short sentence — e.g. 'Could you give me a specific example of that?' "
-            "Do NOT move to the next question yet. Keep it to one sentence."
-        )
-        messages.append({"role": "user", "content": f"[Candidate answer]: {req.user_answer}\n\n[Instruction]: {instruction}"})
-        try:
-            reply = chat(client, MODEL, messages, max_tokens=80).strip()
-        except Exception:
-            raise HTTPException(status_code=500, detail="Failed to get interviewer response — please try again")
-        return {"reply": reply, "done": False, "followup": True}
-
-    if idx < len(req.questions) - 1:
+    total = len(req.questions)
+    is_last = idx >= total - 1
+    if not is_last:
         next_q = req.questions[idx + 1]
-        instruction = (
-            f"The candidate just answered question {idx + 1} of {len(req.questions)}. "
-            f"Give a very brief acknowledgement (5 words max), then ask this next question exactly as written: {next_q}"
-        )
+        move_on = f"give a very brief acknowledgement (5 words max), then ask this next question exactly as written: {next_q}"
     else:
-        instruction = (
-            f"The candidate just answered the final ({len(req.questions)}th) question. "
-            "Thank them warmly in 1-2 sentences and tell them you will prepare their feedback now."
-        )
+        move_on = "thank them warmly in 1-2 sentences and tell them you will prepare their feedback now."
 
+    # Smart follow-up: the model decides from the answer's content (missing example,
+    # result, personal role…), not only from its length. One follow-up per question.
+    if req.allow_followup and 0 <= idx < total:
+        plan = req.question_plan[idx] if req.question_plan and idx < len(req.question_plan) else None
+        rubric = ""
+        if plan and plan.competency:
+            rubric = f"[This question tests]: {plan.competency}\n[A strong answer]: {plan.strong_answer}\n"
+        word_count = len(req.user_answer.strip().split())
+        short_note = " The answer is very short (under 20 words), so ask a follow-up." if word_count < 20 else ""
+        decision_prompt = RESPOND_DECISION_PROMPT.format(
+            number=idx + 1, total=total, answer=req.user_answer, question=req.questions[idx],
+            rubric=rubric, short_note=short_note, move_on=move_on,
+        )
+        try:
+            data = extract_json(chat(client, MODEL, messages + [{"role": "user", "content": decision_prompt}], max_tokens=300))
+            reply = str(data.get("reply") or "").strip()
+            if reply:
+                if data.get("followup") is True:
+                    return {"reply": reply, "done": False, "followup": True}
+                return {"reply": reply, "done": is_last, "followup": False}
+        except Exception:
+            pass  # fall back to the plain "move on" reply below
+
+    instruction = f"The candidate just answered question {idx + 1} of {total}. Now {move_on}"
     messages.append({"role": "user", "content": f"[Candidate answer]: {req.user_answer}\n\n[Instruction]: {instruction}"})
 
     try:
@@ -438,8 +510,7 @@ async def respond(request: Request, req: RespondRequest, current_user: dict = De
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to get interviewer response — please try again")
 
-    done = idx >= len(req.questions) - 1
-    return {"reply": reply, "done": done, "followup": False}
+    return {"reply": reply, "done": is_last, "followup": False}
 
 
 MAX_RECORDING_SIZE = 50 * 1024 * 1024  # 50 MB
@@ -553,25 +624,83 @@ async def debrief(req: DebriefRequest, current_user: dict = Depends(get_current_
 
     check_ai_consent(str(current_user["id"]))
 
-    qa_text = "\n\n".join(
-        [f"Q{i+1}: {pair.question}\nA{i+1}: {pair.answer}" for i, pair in enumerate(req.qa_pairs)]
-    )
+    blocks = []
+    for i, pair in enumerate(req.qa_pairs, start=1):
+        lines = [f"Q{i}: {pair.question}"]
+        if pair.competency:
+            lines.append(f"(Evaluator notes — tests: {pair.competency}. Strong answer: {pair.strong_answer or 'n/a'})")
+        if pair.followup_question and pair.first_answer:
+            lines += [f"A{i} (first answer): {pair.first_answer}",
+                      f"Interviewer follow-up: {pair.followup_question}",
+                      f"A{i} (after follow-up): {pair.answer}"]
+        else:
+            lines.append(f"A{i}: {pair.answer}")
+        blocks.append("\n".join(lines))
+
+    difficulty = req.difficulty if req.difficulty in LEVEL_EXPECTATIONS else "Mid"
+    requirements = ""
+    if req.requirements:
+        requirements = "- Key job requirements: " + "; ".join(
+            f"{r.name} ({r.priority}, CV evidence: {r.cv_evidence})" for r in req.requirements)
+    cv_summary = ""
+    if req.cv_summary:
+        cv_summary = "- Candidate background (from CV): " + strip_contact_pii(trim_to_words(req.cv_summary, 200))
 
     # Use replace() so curly braces in user answers don't break Python's .format()
-    lang = language_instruction(req.language or "en-US")
-    prompt = DEBRIEF_PROMPT.replace("{language_instruction}", lang).replace("{qa_pairs}", qa_text)
+    prompt = DEBRIEF_PROMPT
+    for key, value in {
+        "{language_instruction}": language_instruction(req.language or "en-US"),
+        "{role}": req.role or "the position",
+        "{difficulty}": difficulty,
+        "{interview_type}": req.interview_type or "full",
+        "{requirements}": requirements,
+        "{cv_summary}": cv_summary,
+        "{level_expectations}": LEVEL_EXPECTATIONS[difficulty],
+    }.items():
+        prompt = prompt.replace(key, value)
+    prompt = prompt.replace("{qa_pairs}", "\n\n".join(blocks))  # last, so answers can't inject placeholders
     messages = [
         {"role": "system", "content": DEBRIEF_SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
     ]
 
     try:
-        # Longer interviews need more room for per-answer feedback
-        raw = chat(client, MODEL, messages, max_tokens=min(8000, 2000 + 500 * len(req.qa_pairs)))
+        # Longer interviews need more room for per-answer feedback; low temperature = steadier scores
+        raw = chat(client, MODEL, messages, max_tokens=min(10000, 2000 + 700 * len(req.qa_pairs)), temperature=0.2)
         data = extract_json(raw)
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to generate debrief — please try again")
 
+    return finalize_debrief(data)
+
+
+def _score(value):
+    try:
+        return min(10.0, max(1.0, float(value)))
+    except (TypeError, ValueError):
+        return None
+
+
+def finalize_debrief(data: dict) -> dict:
+    """Compute scores in code (average of the three criteria) instead of trusting the model's math."""
+    answers = data.get("answers") or []
+    for a in answers:
+        scores = a.get("scores") if isinstance(a.get("scores"), dict) else {}
+        parts = [s for s in (_score(scores.get(k)) for k in ("relevance", "examples", "clarity")) if s is not None]
+        if parts:
+            a["scores"] = {k: _score(scores.get(k)) for k in ("relevance", "examples", "clarity")}
+            a["score"] = round(sum(parts) / len(parts), 1)
+        else:
+            a["score"] = _score(a.get("score")) or 5.0
+        if not isinstance(a.get("star"), dict):
+            a["star"] = None
+        # Older clients and the database read "ideal_answer"
+        a["ideal_answer"] = a.get("improved_answer") or a.get("ideal_answer") or ""
+    if answers:
+        data["overall_score"] = round(sum(a["score"] for a in answers) / len(answers), 1)
+    decision = data.get("hiring_decision")
+    if not (isinstance(decision, dict) and decision.get("decision") in ("yes", "maybe", "no")):
+        data["hiring_decision"] = None
     return data
 
 

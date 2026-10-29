@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTTS } from '../hooks/useTTS'
 import { useSTT } from '../hooks/useSTT'
+import { getStoredToken } from '../context/AuthContext'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
 
@@ -52,7 +53,7 @@ function ScoreDiff({ original, updated }) {
   )
 }
 
-export default function RetryModal({ question, originalScore, role, onClose }) {
+export default function RetryModal({ question, originalScore, role, difficulty = 'Mid', language = 'en-US', competency, strongAnswer, onClose }) {
   const [phase,         setPhase]         = useState('intro')   // intro | idle | listening | thinking | result
   const [transcript,    setTranscript]    = useState('')
   const [result,        setResult]        = useState(null)
@@ -73,8 +74,14 @@ export default function RetryModal({ question, originalScore, role, onClose }) {
     try {
       const res = await fetch(`${BACKEND_URL}/debrief`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ qa_pairs: [{ question, answer: text }], role }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getStoredToken()}` },
+        // Same context and rubric as the main debrief, so the two scores are comparable
+        body: JSON.stringify({
+          qa_pairs: [{ question, answer: text, competency: competency || null, strong_answer: strongAnswer || null }],
+          role,
+          difficulty,
+          language,
+        }),
       })
       if (!res.ok) throw new Error('Debrief failed')
       const data = await res.json()
@@ -85,7 +92,7 @@ export default function RetryModal({ question, originalScore, role, onClose }) {
       setPhase('idle')
       canRecordRef.current = true
     }
-  }, [question, role])
+  }, [question, role, difficulty, language, competency, strongAnswer])
 
   const { start, stop, isListening, interimTranscript } = useSTT({
     onFinalTranscript: handleFinalTranscript,
@@ -260,7 +267,7 @@ export default function RetryModal({ question, originalScore, role, onClose }) {
                     onClick={() => setShowIdeal(o => !o)}
                     className="w-full text-left flex items-center justify-between px-4 py-3 glass-light border border-slate-700/40 rounded-2xl text-sm text-slate-400 hover:border-slate-600 transition"
                   >
-                    <span className="flex items-center gap-2"><span>⭐</span> See model answer</span>
+                    <span className="flex items-center gap-2"><span>⭐</span> See your answer, improved</span>
                     <span className="text-xs">{showIdeal ? '▲' : '▼'}</span>
                   </button>
                   {showIdeal && (

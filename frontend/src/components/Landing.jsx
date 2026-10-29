@@ -99,6 +99,17 @@ const INTERVIEW_TYPES = [
 
 const QUESTION_COUNTS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 const MINUTES_PER_QUESTION = 2
+const QUESTION_COUNT_KEY = 'mockmate_question_count'
+
+// Remember the last chosen number of questions so it survives navigation and re-login
+function loadQuestionCount() {
+  try {
+    const saved = Number(localStorage.getItem(QUESTION_COUNT_KEY))
+    return QUESTION_COUNTS.includes(saved) ? saved : 5
+  } catch {
+    return 5
+  }
+}
 
 const DIFFICULTY_INFO = {
   Junior: 'Foundational · Learning potential',
@@ -195,7 +206,7 @@ export default function Landing({ onStart, user, onUpgrade }) {
   const [difficulty,    setDifficulty]    = useState('Mid')
   const [language,      setLanguage]      = useState('en-US')
   const [interviewType, setInterviewType] = useState('full')
-  const [questionCount, setQuestionCount] = useState(5)
+  const [questionCount, setQuestionCount] = useState(loadQuestionCount)
   const [showTemplates, setShowTemplates] = useState(false)
 
   const [cvFile,      setCvFile]      = useState(null)
@@ -254,6 +265,10 @@ export default function Landing({ onStart, user, onUpgrade }) {
     if (language !== 'en-US') p.set('lang', language); else p.delete('lang')
     window.history.replaceState({}, '', `?${p.toString()}`)
   }, [tab, interviewType, difficulty, language, selectedCategory, companyName, questionCount]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    try { localStorage.setItem(QUESTION_COUNT_KEY, String(questionCount)) } catch {}
+  }, [questionCount])
 
   useEffect(() => {
     fetchCVProfile().then(data => {
@@ -740,7 +755,7 @@ export default function Landing({ onStart, user, onUpgrade }) {
               >
                 {loading
                   ? <><Spinner />{cvText ? 'Building personalised interview…' : 'Preparing interview…'}</>
-                  : <><IconMic className="w-4 h-4" />{cvText ? `Start ${difficulty} Interview — Personalised` : `Start ${difficulty} Interview`}</>
+                  : <><IconMic className="w-4 h-4" />{cvText ? `Start ${difficulty} Interview — Personalised` : `Start ${difficulty} Interview`} · {questionCount} {questionCount === 1 ? 'question' : 'questions'}</>
                 }
               </button>
             </>
@@ -783,7 +798,7 @@ export default function Landing({ onStart, user, onUpgrade }) {
               >
                 {practiceLoading
                   ? <><Spinner />Loading…</>
-                  : <><IconMic className="w-4 h-4" />{selectedCategory ? `Practice ${selectedCategory}` : 'Select a topic first'}</>
+                  : <><IconMic className="w-4 h-4" />{selectedCategory ? `Practice ${selectedCategory} · ${questionCount} ${questionCount === 1 ? 'question' : 'questions'}` : 'Select a topic first'}</>
                 }
               </button>
             </>
