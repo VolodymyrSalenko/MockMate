@@ -4,6 +4,7 @@ import { saveSessionToDB } from "../utils/api";
 import { getStoredToken } from "../context/AuthContext";
 import RetryModal from "./RetryModal";
 import { BACKEND_URL } from "../utils/config";
+import { getInterviewer } from "../utils/interviewers";
 import { useTheme } from "../context/ThemeContext";
 
 function BgOrbs() {
@@ -331,7 +332,7 @@ function AnswerTile({ item, index, onOpen }) {
 }
 
 // Everything about one answer: shown in the modal and in the PDF export
-function AnswerDetail({ item, index, onRetry }) {
+function AnswerDetail({ item, index, interviewerName, onRetry }) {
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3">
@@ -350,7 +351,7 @@ function AnswerDetail({ item, index, onRetry }) {
 
       {item.followup_question && (
         <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-          <span className="font-semibold">↪ Alex asked a follow-up:</span> “{item.followup_question}”
+          <span className="font-semibold">↪ {interviewerName} asked a follow-up:</span> “{item.followup_question}”
         </p>
       )}
 
@@ -395,7 +396,7 @@ function AnswerDetail({ item, index, onRetry }) {
   );
 }
 
-function AnswerModal({ answers, index, onClose, onNavigate, onRetry }) {
+function AnswerModal({ answers, index, interviewerName, onClose, onNavigate, onRetry }) {
   const item = answers[index];
   const hasPrev = index > 0;
   const hasNext = index < answers.length - 1;
@@ -441,7 +442,7 @@ function AnswerModal({ answers, index, onClose, onNavigate, onRetry }) {
           </button>
         </div>
         <div className="overflow-y-auto px-4 sm:px-6 py-5">
-          <AnswerDetail item={item} index={index} onRetry={() => onRetry(index)} />
+          <AnswerDetail item={item} index={index} interviewerName={interviewerName} onRetry={() => onRetry(index)} />
         </div>
       </div>
     </div>
@@ -773,6 +774,7 @@ export default function Debrief({
   questionPlan = [],
   requirements = [],
   cvSummary = null,
+  interviewer,
   duration,
   faceMetrics,
   recording,
@@ -786,6 +788,7 @@ export default function Debrief({
   const [sharing, setSharing] = useState(false);
   const [retryQ, setRetryQ] = useState(null);
   const [openIndex, setOpenIndex] = useState(null);
+  const interviewerName = getInterviewer(interviewer).name;
   const [deliveryOpen, setDeliveryOpen] = useState(false);
   const debriefRef = useRef(null);
   const shareCardRef = useRef(null);
@@ -1062,7 +1065,7 @@ export default function Debrief({
           <div className="space-y-4">
             {debrief.answers.map((item, i) => (
               <div key={i} className="glass border border-slate-200 dark:border-slate-700/40 rounded-3xl p-5 sm:p-6">
-                <AnswerDetail item={item} index={i} />
+                <AnswerDetail item={item} index={i} interviewerName={interviewerName} />
               </div>
             ))}
           </div>
@@ -1181,6 +1184,7 @@ export default function Debrief({
       {/* Answer breakdown modal */}
       {openIndex != null && debrief.answers[openIndex] && (
         <AnswerModal
+          interviewerName={interviewerName}
           answers={debrief.answers}
           index={openIndex}
           onClose={() => setOpenIndex(null)}
@@ -1201,6 +1205,7 @@ export default function Debrief({
       {/* Retry modal */}
       {retryQ && (
         <RetryModal
+          interviewer={interviewer}
           question={retryQ.question}
           originalScore={retryQ.originalScore}
           role={role}

@@ -2,8 +2,9 @@ import { useCallback, useRef } from 'react'
 import { BACKEND_URL } from '../utils/config'
 import { getStoredToken } from '../context/AuthContext'
 
-function browserSpeak(text, onEnd) {
+function browserSpeak(text, onEnd, onStart) {
   const utter = new SpeechSynthesisUtterance(text)
+  utter.onstart = () => { if (onStart) onStart() }
   utter.rate = 1.0
   utter.pitch = 1.0
   utter.onend = () => { if (onEnd) onEnd() }
@@ -12,7 +13,7 @@ function browserSpeak(text, onEnd) {
   window.speechSynthesis.speak(utter)
 }
 
-function ttsRequest(text) {
+function ttsRequest(text, interviewer, voice) {
   const token = getStoredToken()
   return fetch(`${BACKEND_URL}/tts`, {
     method: 'POST',
@@ -20,7 +21,7 @@ function ttsRequest(text) {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({ text, interviewer, voice }),
   })
     .then((res) => {
       if (!res.ok) {
@@ -32,7 +33,10 @@ function ttsRequest(text) {
     .then((blob) => URL.createObjectURL(blob))
 }
 
-export function useTTS({ language = 'en-US' } = {}) {
+export function useTTS({ language = 'en-US', interviewer, voice } = {}) {
+  // Interviewer + voice pick the ElevenLabs voice; a ref keeps the stable callbacks below up to date
+  const voiceRef = useRef({ interviewer, voice })
+  voiceRef.current = { interviewer, voice }
   const audioRef  = useRef(null)
   const genRef    = useRef(0)
   const cacheRef  = useRef(new Map()) // text -> blobUrl (ready)
@@ -53,7 +57,7 @@ export function useTTS({ language = 'en-US' } = {}) {
     if (!text?.trim()) return
     if (cacheRef.current.has(text) || pendingRef.current.has(text)) return
 
-    const p = ttsRequest(text)
+    const p = ttsRequest(text, voiceRef.current.interviewer, voiceRef.current.voice)
       .then((url) => {
         cacheRef.current.set(text, url)
         pendingRef.current.delete(text)
@@ -68,7 +72,8 @@ export function useTTS({ language = 'en-US' } = {}) {
     pendingRef.current.set(text, p)
   }, [])
 
-  const speak = useCallback((text, onEnd) => {
+  // onStart fires when sound actually begins (after the audio has downloaded)
+  const speak = useCallback((text, onEnd, onStart) => {
     genRef.current += 1
     const myGen = genRef.current
 
@@ -88,6 +93,9 @@ export function useTTS({ language = 'en-US' } = {}) {
       if (genRef.current !== myGen) { URL.revokeObjectURL(url); return }
       const audio = new Audio(url)
       audioRef.current = audio
+      audio.onplaying = () => {
+        if (genRef.current === myGen && onStart) onStart()
+      }
       audio.onended = () => {
         if (genRef.current !== myGen) return
         URL.revokeObjectURL(url)
@@ -119,13 +127,13 @@ export function useTTS({ language = 'en-US' } = {}) {
       pendingRef.current.get(text).then((url) => {
         if (genRef.current !== myGen) return
         if (url) playUrl(url)
-        else browserSpeak(text, onEnd)
+        else browserSpeak(text, onEnd, onStart)
       })
       return
     }
 
     // No prefetch — fetch now
-    ttsRequest(text)
+    ttsRequest(text, voiceRef.current.interviewer, voiceRef.current.voice)
       .then((url) => {
         if (genRef.current !== myGen) { URL.revokeObjectURL(url); return }
         playUrl(url)
@@ -133,7 +141,7 @@ export function useTTS({ language = 'en-US' } = {}) {
       .catch((err) => {
         console.error('[TTS] backend error, falling back to browser TTS:', err)
         if (genRef.current !== myGen) return
-        browserSpeak(text, onEnd)
+        browserSpeak(text, onEnd, onStart)
       })
   }, [])
 

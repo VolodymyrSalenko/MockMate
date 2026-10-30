@@ -276,7 +276,7 @@ function AppInner() {
         {view === 'cv'        && <CVProfile user={user} onUpgrade={() => setShowProModal(true)} />}
         {view === 'landing'   && <Landing   onStart={handleStart} user={user} onUpgrade={() => setShowProModal(true)} />}
         {view === 'interview' && sessionData && (
-          <Interview sessionData={sessionData} onComplete={handleComplete} />
+          <Interview sessionData={sessionData} onComplete={handleComplete} onExit={handleRetry} />
         )}
         {view === 'debrief' && (
           <Debrief
@@ -288,6 +288,7 @@ function AppInner() {
             questionPlan={sessionData?.question_plan || []}
             requirements={sessionData?.requirements || []}
             cvSummary={sessionData?.cv_summary || null}
+            interviewer={sessionData?.interviewer}
             duration={duration}
             faceMetrics={faceMetrics}
             recording={recording}

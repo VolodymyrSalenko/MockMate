@@ -9,7 +9,7 @@ def language_instruction(language_code):
     """Return instruction text to inject into prompts to enforce target language."""
     return LANGUAGE_INSTRUCTIONS.get(language_code, LANGUAGE_INSTRUCTIONS["en-US"])
 
-INTERVIEWER_SYSTEM_PROMPT = """You are Alex, a professional and friendly job interviewer at a tech company. You are interviewing a candidate for the role of {role}.
+INTERVIEWER_SYSTEM_PROMPT = """You are {interviewer_name}, a professional and friendly job interviewer at a tech company. You are interviewing a candidate for the role of {role}.
 
 {language_instruction}
 
@@ -48,10 +48,10 @@ Generate a JSON object with exactly this structure (no preamble, no markdown, no
   "requirements": [
     {{"name": "short requirement, e.g. 'PostgreSQL' or 'Stakeholder communication'", "priority": "must", "cv_evidence": "strong"}}
   ],
-  "intro_message": "A warm 4-sentence intro message from Alex the interviewer. Format: greet candidate by name if known, introduce yourself as Alex, mention the role, say you'll ask {question_count} question(s), then ask the first question verbatim.",
+  "intro_message": "A warm 4-sentence intro message from {interviewer_name} the interviewer. Format: greet candidate by name if known, introduce yourself as {interviewer_name}, mention the role, say you'll ask {question_count} question(s), then ask the first question verbatim.",
   "questions": [
     {{
-      "question": "the question Alex asks out loud",
+      "question": "the question the interviewer asks out loud",
       "competency": "what this question tests, 2-6 words",
       "strong_answer": "one sentence: what a strong answer must contain for this role and level",
       "red_flags": "one sentence: what a weak answer looks like"
@@ -90,10 +90,10 @@ Generate exactly {question_count} interview question(s) for this category. Make 
   "role": "{category} Practice",
   "candidate_name": "Candidate",
   "seniority": "{difficulty}",
-  "intro_message": "A warm 4-sentence intro from Alex: greet candidate, say you're Alex, mention this is {category} practice at {difficulty} level, mention {question_count} question(s), then ask the first question verbatim.",
+  "intro_message": "A warm 4-sentence intro from {interviewer_name}: greet candidate, say you're {interviewer_name}, mention this is {category} practice at {difficulty} level, mention {question_count} question(s), then ask the first question verbatim.",
   "questions": [
     {{
-      "question": "the question Alex asks out loud",
+      "question": "the question the interviewer asks out loud",
       "competency": "what this question tests, 2-6 words",
       "strong_answer": "one sentence: what a strong answer must contain at this level",
       "red_flags": "one sentence: what a weak answer looks like"
@@ -240,7 +240,7 @@ Ask a follow-up only if something important is clearly missing: no concrete exam
 - If you ask a follow-up: one short, specific question that targets exactly what is missing (e.g. "What was the result, in numbers?" or "What did you personally do?"). Do not repeat the original question.
 - If you move on: {move_on}
 
-Return ONLY this JSON: {{"followup": true or false, "reply": "what Alex says out loud"}}"""
+Return ONLY this JSON: {{"followup": true or false, "reply": "what the interviewer says out loud"}}"""
 
 CV_ANALYSIS_PROMPT = """You are a professional career coach and ATS (Applicant Tracking System) expert. Analyse the following CV and return ONLY a valid JSON object — no preamble, no markdown, no backticks.
 

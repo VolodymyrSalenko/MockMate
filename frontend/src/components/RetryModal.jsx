@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTTS } from '../hooks/useTTS'
 import { useSTT } from '../hooks/useSTT'
 import { getStoredToken } from '../context/AuthContext'
+import { getInterviewer, getVoice } from '../utils/interviewers'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
 
@@ -53,7 +54,7 @@ function ScoreDiff({ original, updated }) {
   )
 }
 
-export default function RetryModal({ question, originalScore, role, difficulty = 'Mid', language = 'en-US', competency, strongAnswer, onClose }) {
+export default function RetryModal({ question, originalScore, role, difficulty = 'Mid', language = 'en-US', competency, strongAnswer, interviewer, onClose }) {
   const [phase,         setPhase]         = useState('intro')   // intro | idle | listening | thinking | result
   const [transcript,    setTranscript]    = useState('')
   const [result,        setResult]        = useState(null)
@@ -65,7 +66,7 @@ export default function RetryModal({ question, originalScore, role, difficulty =
   const canRecordRef         = useRef(false)
   const countdownIntervalRef = useRef(null)
 
-  const { speak } = useTTS()
+  const { speak } = useTTS({ language, interviewer, voice: getVoice(interviewer) })
 
   const handleFinalTranscript = useCallback(async (text) => {
     if (!text.trim()) return
@@ -188,7 +189,7 @@ export default function RetryModal({ question, originalScore, role, difficulty =
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
               </svg>
-              <span className="text-sm">Alex is reading the question...</span>
+              <span className="text-sm">{getInterviewer(interviewer).name} is reading the question...</span>
             </div>
           )}
 
