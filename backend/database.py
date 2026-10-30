@@ -1,7 +1,6 @@
 
 import json
 import os
-import json
 import psycopg
 from contextlib import contextmanager
 from dotenv import load_dotenv

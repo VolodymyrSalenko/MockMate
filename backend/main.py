@@ -703,11 +703,17 @@ async def debrief(req: DebriefRequest, current_user: dict = Depends(get_current_
         {"role": "user", "content": prompt},
     ]
 
-    try:
-        # Longer interviews need more room for per-answer feedback; low temperature = steadier scores
-        raw = chat(client, MODEL, messages, max_tokens=min(10000, 2000 + 700 * len(req.qa_pairs)), temperature=0.2)
-        data = extract_json(raw)
-    except Exception:
+    # Longer interviews need more room for per-answer feedback; low temperature = steadier scores.
+    # The model occasionally returns malformed JSON, so try a second time before giving up.
+    data = None
+    for attempt in (1, 2):
+        try:
+            raw = chat(client, MODEL, messages, max_tokens=min(10000, 2000 + 700 * len(req.qa_pairs)), temperature=0.2)
+            data = extract_json(raw)
+            break
+        except Exception as e:
+            print(f"⚠️  /debrief attempt {attempt} failed: {type(e).__name__}: {e}")
+    if data is None:
         raise HTTPException(status_code=500, detail="Failed to generate debrief — please try again")
 
     return finalize_debrief(data)
@@ -907,8 +913,3 @@ def remove_session(session_id: int, current_user: dict = Depends(get_current_use
     if not deleted:
         raise HTTPException(status_code=404, detail="Session not found")
     return {"deleted": True}
-
-
-@app.get("/health")
-async def health():
-    return {"status": "ok", "model": MODEL}

@@ -14,7 +14,6 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import bcrypt as _bcrypt
 from jose import jwt, JWTError
 from pydantic import BaseModel
-from typing import Optional
 from rate_limit import limiter
 
 from database import (

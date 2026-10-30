@@ -793,8 +793,13 @@ export default function Debrief({
   const debriefRef = useRef(null);
   const shareCardRef = useRef(null);
   const savedToDB = useRef(false);
+  // React runs effects twice in development; one debrief request is enough (and a
+  // second, failing one could replace a good result with an error screen)
+  const requestedRef = useRef(false);
 
   useEffect(() => {
+    if (requestedRef.current) return;
+    requestedRef.current = true;
     const fetchDebrief = async () => {
       try {
         // :one: Clean Q/A pairs and prevent empty payload

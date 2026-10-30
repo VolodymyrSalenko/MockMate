@@ -4,7 +4,7 @@ import { deleteCookie } from '../utils/cookies'
 import { setAIConsent, fetchCVProfile, uploadCVProfile, analyseCV } from '../utils/api'
 import { BACKEND_URL } from '../utils/config'
 import InterviewerVoices from './InterviewerVoices'
-import { IconZap, IconBriefcase, IconGraduation, IconGlobe, IconAward, IconMail, IconPhone, IconMapPin, IconLink } from '../utils/icons'
+import { IconZap, IconBriefcase, IconGraduation, IconGlobe, IconAward, IconMail, IconPhone, IconMapPin } from '../utils/icons'
 
 // ── Shared primitives ──────────────────────────────────────────────────────────
 

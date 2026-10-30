@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { fetchSessions, fetchSessionDetail } from '../utils/api'
 import { durationLabel } from '../utils/speechAnalytics'
 import {
-  scoreBg, scoreHex as scoreGradient,
+  scoreBg,
   formatDate, difficultyBadge, typeBadge, langInfo,
 } from '../utils/scoring'
 
