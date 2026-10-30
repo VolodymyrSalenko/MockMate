@@ -1,9 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
-import { fetchCVProfile, uploadCVProfile, fetchSessions } from '../utils/api'
+import { fetchCVProfile, uploadCVProfile } from '../utils/api'
 import { getStoredToken } from '../context/AuthContext'
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { IconMic } from '../utils/icons'
-import { useTheme } from '../context/ThemeContext'
 import { INTERVIEWERS, DEFAULT_INTERVIEWER, getInterviewer } from '../utils/interviewers'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
@@ -149,73 +147,9 @@ const LANGUAGES = [
   { code: 'fr-FR', label: 'Français', short: 'FR' },
 ]
 
-function scoreColor(s) {
-  return s >= 8 ? '#10b981' : s >= 5 ? '#f59e0b' : '#ef4444'
-}
-
-function ProgressChart() {
-  const { theme } = useTheme()
-  const [data, setData] = useState([])
-
-  useEffect(() => {
-    fetchSessions().then(sessions => {
-      const chartData = sessions
-        .filter(s => s.overall_score != null)
-        .map(s => ({
-          date: new Date(s.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-          score: parseFloat(parseFloat(s.overall_score).toFixed(1)),
-          role: s.role || '',
-          difficulty: s.difficulty || 'Mid',
-        }))
-        .reverse()
-      setData(chartData)
-    }).catch(() => {})
-  }, [])
-
-  if (data.length < 2) return null
-  const avg = (data.reduce((s, d) => s + d.score, 0) / data.length).toFixed(1)
-  return (
-    <div className="mt-5 glass border border-slate-200 dark:border-slate-700/40 rounded-2xl p-5 animate-fade-up">
-      <div className="flex items-center justify-between mb-3">
-        <div>
-          <p className="text-slate-700 dark:text-slate-200 text-sm font-semibold">Progress</p>
-          <p className="text-slate-500 dark:text-slate-500 text-xs">{data.length} sessions · avg {avg}/10</p>
-        </div>
-        <span className={`text-sm font-black px-2.5 py-0.5 rounded-lg ${
-          parseFloat(avg) >= 8 ? 'bg-emerald-500/15 text-emerald-400' :
-          parseFloat(avg) >= 5 ? 'bg-yellow-500/15 text-yellow-400' : 'bg-red-500/15 text-red-400'
-        }`}>{avg}</span>
-      </div>
-      <ResponsiveContainer width="100%" height={100}>
-        <LineChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-          <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
-          <YAxis domain={[0, 10]} tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} ticks={[0, 5, 10]} />
-          <ReferenceLine y={7} stroke="rgba(16,185,129,0.2)" strokeDasharray="4 4" />
-          <Tooltip
-            contentStyle={theme === 'dark'
-              ? { backgroundColor: 'rgba(15,23,42,0.95)', border: '1px solid rgba(51,65,85,0.5)', borderRadius: 10 }
-              : { backgroundColor: 'rgba(255,255,255,0.97)', border: '1px solid rgba(226,232,240,0.8)', borderRadius: 10 }}
-            labelStyle={{ color: theme === 'dark' ? '#e2e8f0' : '#1e293b', fontWeight: 600, fontSize: 11 }}
-            itemStyle={{ color: theme === 'dark' ? '#94a3b8' : '#475569', fontSize: 11 }}
-            formatter={(v, _, props) => [`${v}/10 — ${props.payload?.role || ''}`, 'Score']}
-          />
-          <Line
-            type="monotone" dataKey="score" stroke="#10b981" strokeWidth={2}
-            dot={(props) => {
-              const { cx, cy, payload } = props
-              return <circle key={props.key} cx={cx} cy={cy} r={3.5} fill={scoreColor(payload.score)} stroke="#020617" strokeWidth={2} />
-            }}
-            activeDot={{ r: 5, fill: '#10b981' }}
-          />
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
-  )
-}
-
 // Shared pill button style
 function pillCls(active) {
-  return `flex-1 py-2 rounded-xl text-xs font-semibold transition-all ${
+  return `flex-1 py-2 lg:py-2.5 rounded-xl text-xs lg:text-sm font-semibold transition-all ${
     active
       ? 'bg-emerald-500/15 border border-emerald-500/35 text-emerald-400'
       : 'bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/40 text-slate-700 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600'
@@ -440,7 +374,7 @@ export default function Landing({ onStart, user, onUpgrade }) {
   const SettingsRow = () => (
     <div className="space-y-4">
     <div>
-      <label className="block text-slate-600 dark:text-slate-400 text-xs font-semibold uppercase tracking-wide mb-1.5">Interviewer</label>
+      <label className="block text-slate-600 dark:text-slate-400 text-xs lg:text-[13px] font-semibold uppercase tracking-wide mb-1.5">Interviewer</label>
       <div className="flex gap-2">
         {INTERVIEWERS.map(iv => (
           <button
@@ -460,7 +394,7 @@ export default function Landing({ onStart, user, onUpgrade }) {
     </div>
     <div className="grid grid-cols-2 gap-3">
       <div>
-        <label className="block text-slate-600 dark:text-slate-400 text-xs font-semibold uppercase tracking-wide mb-1.5">Level</label>
+        <label className="block text-slate-600 dark:text-slate-400 text-xs lg:text-[13px] font-semibold uppercase tracking-wide mb-1.5">Level</label>
         <div className="flex gap-1">
           {['Junior', 'Mid', 'Senior'].map(d => (
             <button key={d} onClick={() => setDifficulty(d)} className={pillCls(difficulty === d)}>{d}</button>
@@ -469,7 +403,7 @@ export default function Landing({ onStart, user, onUpgrade }) {
         <p className="text-slate-600 dark:text-slate-500 text-xs mt-1">{DIFFICULTY_INFO[difficulty]}</p>
       </div>
       <div>
-        <label className="block text-slate-600 dark:text-slate-400 text-xs font-semibold uppercase tracking-wide mb-1.5">Language</label>
+        <label className="block text-slate-600 dark:text-slate-400 text-xs lg:text-[13px] font-semibold uppercase tracking-wide mb-1.5">Language</label>
         <div className="flex gap-1">
           {LANGUAGES.map(lang => {
             const locked = !isPro && lang.code !== 'en-US'
@@ -492,7 +426,7 @@ export default function Landing({ onStart, user, onUpgrade }) {
     </div>
     <div>
       <div className="flex items-baseline justify-between mb-1.5">
-        <label className="block text-slate-600 dark:text-slate-400 text-xs font-semibold uppercase tracking-wide">Questions</label>
+        <label className="block text-slate-600 dark:text-slate-400 text-xs lg:text-[13px] font-semibold uppercase tracking-wide">Questions</label>
         <span className="text-slate-600 dark:text-slate-500 text-xs">
           {questionCount} {questionCount === 1 ? 'question' : 'questions'} · about {questionCount * MINUTES_PER_QUESTION} min
         </span>
@@ -510,12 +444,12 @@ export default function Landing({ onStart, user, onUpgrade }) {
     <div className="relative min-h-screen dark:bg-slate-950 flex flex-col items-center justify-center px-3 sm:px-4 py-10 overflow-hidden">
       <BgOrbs />
 
-      <div className="relative z-10 w-full max-w-xl">
+      <div className="relative z-10 w-full max-w-xl lg:max-w-3xl 2xl:max-w-4xl">
 
         {/* Heading */}
         <div className="mb-6 animate-fade-up">
-          <h1 className="text-2xl font-black text-slate-900 dark:text-white">Practice Interview</h1>
-          <p className="text-slate-600 dark:text-slate-400 text-sm mt-1">Configure your session and start when ready.</p>
+          <h1 className="text-2xl lg:text-3xl font-black text-slate-900 dark:text-white">Practice Interview</h1>
+          <p className="text-slate-600 dark:text-slate-400 text-sm lg:text-base mt-1">Configure your session and start when ready.</p>
         </div>
 
         {/* Mode tabs — segmented control */}
@@ -525,7 +459,7 @@ export default function Landing({ onStart, user, onUpgrade }) {
             { key: 'practice', label: 'Practice Mode'  },
           ].map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
-              className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${
+              className={`flex-1 py-2 lg:py-2.5 rounded-lg text-sm lg:text-base font-semibold transition-all ${
                 tab === t.key
                   ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300'
@@ -538,7 +472,7 @@ export default function Landing({ onStart, user, onUpgrade }) {
 
         {/* Main card */}
         <div
-          className="animate-fade-up glass border border-slate-200 dark:border-slate-700/40 rounded-2xl p-5 sm:p-6 space-y-4 shadow-xl"
+          className="animate-fade-up glass border border-slate-200 dark:border-slate-700/40 rounded-2xl p-5 sm:p-6 lg:p-8 space-y-4 lg:space-y-5 shadow-xl"
           style={{ animationDelay: '0.08s' }}
         >
 
@@ -547,7 +481,7 @@ export default function Landing({ onStart, user, onUpgrade }) {
             <>
               {/* Company */}
               <div>
-                <label className="block text-slate-600 dark:text-slate-400 text-xs font-semibold uppercase tracking-wide mb-1.5">
+                <label className="block text-slate-600 dark:text-slate-400 text-xs lg:text-[13px] font-semibold uppercase tracking-wide mb-1.5">
                   Company <span className="font-normal normal-case text-slate-500 dark:text-slate-500">— optional</span>
                 </label>
                 <input
@@ -562,7 +496,7 @@ export default function Landing({ onStart, user, onUpgrade }) {
               {/* Job Description */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-slate-600 dark:text-slate-400 text-xs font-semibold uppercase tracking-wide">
+                  <label className="text-slate-600 dark:text-slate-400 text-xs lg:text-[13px] font-semibold uppercase tracking-wide">
                     Job Description <span className="text-emerald-500">*</span>
                   </label>
                   {!jdCommitted && (
@@ -724,7 +658,7 @@ export default function Landing({ onStart, user, onUpgrade }) {
 
               {/* CV Upload */}
               <div>
-                <label className="block text-slate-600 dark:text-slate-400 text-xs font-semibold uppercase tracking-wide mb-1.5">
+                <label className="block text-slate-600 dark:text-slate-400 text-xs lg:text-[13px] font-semibold uppercase tracking-wide mb-1.5">
                   CV / Resume <span className="font-normal normal-case text-slate-500 dark:text-slate-500">— optional, personalises questions</span>
                 </label>
                 {!cvFile ? (
@@ -765,7 +699,7 @@ export default function Landing({ onStart, user, onUpgrade }) {
 
               {/* Interview type */}
               <div>
-                <label className="block text-slate-600 dark:text-slate-400 text-xs font-semibold uppercase tracking-wide mb-1.5">Interview Type</label>
+                <label className="block text-slate-600 dark:text-slate-400 text-xs lg:text-[13px] font-semibold uppercase tracking-wide mb-1.5">Interview Type</label>
                 <div className="grid grid-cols-2 gap-1.5">
                   {INTERVIEW_TYPES.map(t => {
                     const locked = !isPro && (t.value === 'technical' || t.value === 'screening')
@@ -797,7 +731,7 @@ export default function Landing({ onStart, user, onUpgrade }) {
               <button
                 onClick={handleStart}
                 disabled={!canStart}
-                className={`w-full font-bold py-3.5 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 text-sm ${
+                className={`w-full font-bold py-3.5 lg:py-4 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 text-sm lg:text-base ${
                   canStart
                     ? 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white shadow-md shadow-emerald-500/25'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-500 cursor-not-allowed border border-slate-200 dark:border-slate-700/40'
@@ -815,13 +749,13 @@ export default function Landing({ onStart, user, onUpgrade }) {
           {tab === 'practice' && (
             <>
               <div>
-                <label className="block text-slate-600 dark:text-slate-400 text-xs font-semibold uppercase tracking-wide mb-2">Topic</label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                <label className="block text-slate-600 dark:text-slate-400 text-xs lg:text-[13px] font-semibold uppercase tracking-wide mb-2">Topic</label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5 lg:gap-2">
                   {CATEGORIES.map(c => (
                     <button
                       key={c.value}
                       onClick={() => setSelectedCategory(selectedCategory === c.value ? null : c.value)}
-                      className={`py-2 px-3 rounded-xl text-xs font-medium text-center transition-all ${
+                      className={`py-2 lg:py-3 px-3 rounded-xl text-xs lg:text-sm font-medium text-center transition-all ${
                         selectedCategory === c.value
                           ? 'bg-emerald-500/15 border border-emerald-500/35 text-emerald-400'
                           : 'bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/40 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600'
@@ -840,7 +774,7 @@ export default function Landing({ onStart, user, onUpgrade }) {
               <button
                 onClick={handlePracticeStart}
                 disabled={!canPractice}
-                className={`w-full font-bold py-3.5 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 text-sm ${
+                className={`w-full font-bold py-3.5 lg:py-4 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 text-sm lg:text-base ${
                   canPractice
                     ? 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white shadow-md shadow-emerald-500/25'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-500 cursor-not-allowed border border-slate-200 dark:border-slate-700/40'
@@ -858,8 +792,6 @@ export default function Landing({ onStart, user, onUpgrade }) {
         <p className="text-center text-slate-600 dark:text-slate-500 text-xs mt-4">
           Uses your browser's microphone · Works best in Chrome
         </p>
-
-        <ProgressChart />
       </div>
     </div>
   )
