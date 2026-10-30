@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { BACKEND_URL } from '../utils/config'
 
-const FEATURES = [
+export const FEATURES = [
   { label: 'Practice sessions per day',   free: '3',          pro: 'Unlimited' },
   { label: 'Interview modes',             free: '3 modes',    pro: 'All 5 modes' },
   { label: 'AI scoring & feedback',       free: true,         pro: true },
@@ -11,7 +11,6 @@ const FEATURES = [
   { label: 'Job description upload',     free: false,        pro: true },
   { label: 'Body language analysis',     free: false,        pro: true },
   { label: 'Video recording & playback', free: false,        pro: true },
-  { label: 'PDF export',                 free: false,        pro: true },
 ]
 
 function FeatureValue({ v }) {

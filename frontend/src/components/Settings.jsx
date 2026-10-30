@@ -4,6 +4,7 @@ import { deleteCookie } from '../utils/cookies'
 import { setAIConsent, fetchCVProfile, uploadCVProfile, analyseCV } from '../utils/api'
 import { BACKEND_URL } from '../utils/config'
 import InterviewerVoices from './InterviewerVoices'
+import ProModal, { FEATURES } from './ProModal'
 import { IconZap, IconBriefcase, IconGraduation, IconGlobe, IconAward, IconMail, IconPhone, IconMapPin } from '../utils/icons'
 
 // ── Shared primitives ──────────────────────────────────────────────────────────
@@ -190,6 +191,56 @@ function ScoreBar({ score, max = 10, color = 'bg-emerald-500' }) {
 }
 
 // ── Tab definitions ────────────────────────────────────────────────────────────
+
+// What Pro adds over Free, from the same list the upgrade dialog shows
+const PRO_PERKS = FEATURES.filter(f => f.free !== f.pro)
+  .map(f => (typeof f.pro === 'string' ? `${f.label}: ${f.pro}` : f.label))
+
+function PlanCard({ isPro }) {
+  const [showUpgrade, setShowUpgrade] = useState(false)
+  return (
+    <div className={`rounded-2xl p-6 border ${
+      isPro
+        ? 'bg-gradient-to-br from-amber-400/15 via-orange-500/10 to-transparent border-amber-500/30'
+        : 'glass border-slate-200 dark:border-slate-700/40'
+    }`}>
+      <div className="flex items-start justify-between gap-4 mb-4">
+        <div>
+          <p className={`text-xs font-bold uppercase tracking-widest ${isPro ? 'text-amber-500 dark:text-amber-400' : 'text-slate-500'}`}>
+            Your plan
+          </p>
+          <p className="text-xl font-black text-slate-900 dark:text-white mt-1">
+            {isPro ? '⭐ MockMate Pro' : 'Free'}
+          </p>
+          <p className="text-sm text-slate-600 dark:text-slate-400 mt-0.5">
+            {isPro ? 'Everything is unlocked. Here is what your plan includes:' : 'Upgrade to Pro to unlock:'}
+          </p>
+        </div>
+        {isPro ? (
+          <span className="flex-shrink-0 px-3 py-1 rounded-full text-xs font-black text-white bg-gradient-to-r from-amber-400 to-orange-500 shadow-md shadow-amber-500/30">
+            Active
+          </span>
+        ) : (
+          <button
+            onClick={() => setShowUpgrade(true)}
+            className="flex-shrink-0 px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 shadow-md shadow-amber-500/30 transition-all"
+          >
+            Upgrade
+          </button>
+        )}
+      </div>
+      <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+        {PRO_PERKS.map(perk => (
+          <li key={perk} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+            <span className={isPro ? 'text-amber-500' : 'text-slate-400 dark:text-slate-600'}>{isPro ? '✓' : '🔒'}</span>
+            {perk}
+          </li>
+        ))}
+      </ul>
+      {showUpgrade && <ProModal onClose={() => setShowUpgrade(false)} />}
+    </div>
+  )
+}
 
 const TABS = [
   { id: 'profile',  label: 'Profile'  },
@@ -390,7 +441,7 @@ export default function Settings({ initialTab = 'profile' }) {
         <div className="animate-orb absolute top-0 right-0 w-96 h-96 rounded-full bg-emerald-500/6 blur-3xl" />
       </div>
 
-      <div className="relative z-10 p-6 sm:p-8 max-w-2xl mx-auto">
+      <div className="relative z-10 p-6 sm:p-8 max-w-5xl 2xl:max-w-6xl mx-auto">
         {/* Header */}
         <div className="mb-6">
           <h1 className="text-2xl font-black text-slate-900 dark:text-white">Settings</h1>
@@ -427,10 +478,10 @@ export default function Settings({ initialTab = 'profile' }) {
                   <p className="font-black text-slate-900 dark:text-white">{user?.name}</p>
                   <span className={`inline-flex items-center gap-1.5 mt-1 px-2.5 py-0.5 rounded-full text-xs font-bold border ${
                     user?.plan === 'pro'
-                      ? 'bg-amber-500/15 text-amber-400 border-amber-500/25'
+                      ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-white border-transparent shadow-sm shadow-amber-500/30'
                       : 'bg-slate-200/80 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-700/40'
                   }`}>
-                    {user?.plan === 'pro' ? 'Pro' : 'Free'}
+                    {user?.plan === 'pro' ? '⭐ Pro' : 'Free'}
                   </span>
                 </div>
               </div>
@@ -522,6 +573,8 @@ export default function Settings({ initialTab = 'profile' }) {
 
               {nameMsg && <div className="mt-3"><Toast type={nameMsg.type} message={nameMsg.text} onDismiss={() => setNameMsg(null)} /></div>}
             </div>
+
+            <PlanCard isPro={isPro} />
           </div>
         )}
 

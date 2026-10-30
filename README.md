@@ -44,9 +44,9 @@ flowchart TD
 
     W --> X[Session saved to PostgreSQL]
     X --> Y{User choice}
-    Y --> Z[Export PDF]
-    Y --> AA[Retry interview]
-    Y --> AB[Dashboard — progress chart + history]
+    Y --> Z[Retry a question]
+    Y --> AA[Reopen the full debrief in Sessions]
+    Y --> AB[Dashboard]
 ```
 
 ---
@@ -68,7 +68,8 @@ flowchart TD
 - Per-answer score (0–10), feedback, actionable tip, and model ideal answer
 - Speech analytics: WPM, filler word count, STAR framework detection
 - Overall score, performance verdict, and improvement summary
-- PDF export of the full debrief
+- Retry any question and keep every attempt with the session
+- The full debrief stays in Sessions; the video recording stays in your browser
 
 ### Dashboard
 - Session history with per-session drill-down (scores, STAR breakdown, speech stats)

@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { wpmColor, durationLabel } from "../utils/speechAnalytics";
-import { saveSessionToDB } from "../utils/api";
+import { saveSessionToDB, saveRetry } from "../utils/api";
 import { getStoredToken } from "../context/AuthContext";
 import RetryModal from "./RetryModal";
 import { BACKEND_URL } from "../utils/config";
 import { getInterviewer } from "../utils/interviewers";
-import { useTheme } from "../context/ThemeContext";
+import { saveRecording } from "../utils/recordingStore";
 
 function BgOrbs() {
   return (
@@ -325,13 +325,68 @@ function AnswerTile({ item, index, onOpen }) {
         ) : (
           <span />
         )}
-        <span className="text-xs font-semibold text-slate-500">Open →</span>
+        {item.retries?.length > 0 ? (
+          <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+            🔄 best {Math.max(...item.retries.map((r) => r.score ?? 0)).toFixed(1)}
+          </span>
+        ) : (
+          <span className="text-xs font-semibold text-slate-500">Open →</span>
+        )}
       </div>
     </button>
   );
 }
 
-// Everything about one answer: shown in the modal and in the PDF export
+// Your later attempts at this question, newest first, compared with the interview answer
+function RetryAttempts({ retries, originalScore }) {
+  if (!retries?.length) return null;
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-slate-600 dark:text-slate-400 font-semibold">
+        Your retries ({retries.length})
+      </p>
+      {retries
+        .map((r, i) => ({ ...r, number: i + 1 }))
+        .reverse()
+        .map((r) => {
+          const diff = r.score != null && originalScore != null ? r.score - originalScore : null;
+          return (
+            <details
+              key={r.number}
+              className="group bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-slate-800/60"
+            >
+              <summary className="flex items-center gap-3 p-3 cursor-pointer list-none">
+                {r.score != null && <ScoreBadge score={r.score} />}
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                    Attempt {r.number}
+                    {diff != null && diff !== 0 && (
+                      <span className={`ml-2 ${diff > 0 ? "text-emerald-500" : "text-red-500"}`}>
+                        {diff > 0 ? "+" : ""}
+                        {parseFloat(diff.toFixed(1))} vs interview
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs text-slate-500 truncate">{r.answer}</p>
+                </div>
+                <span className="text-xs text-slate-400 group-open:rotate-180 transition-transform">▼</span>
+              </summary>
+              <div className="px-3 pb-3 space-y-2 text-sm leading-relaxed">
+                <p className="text-slate-600 dark:text-slate-300">
+                  <span className="font-semibold">What you said: </span>
+                  {r.answer}
+                </p>
+                {r.feedback && <p className="text-slate-600 dark:text-slate-300">{r.feedback}</p>}
+                {r.tip && <p className="text-emerald-600 dark:text-emerald-300/90">💡 {r.tip}</p>}
+              </div>
+            </details>
+          );
+        })}
+    </div>
+  );
+}
+
+// Everything about one answer, shown in the modal
 function AnswerDetail({ item, index, interviewerName, onRetry }) {
   return (
     <div className="space-y-4">
@@ -383,6 +438,8 @@ function AnswerDetail({ item, index, interviewerName, onRetry }) {
       )}
 
       {item.analytics && <SpeechAnalyticsPanel analytics={item.analytics} />}
+
+      <RetryAttempts retries={item.retries} originalScore={item.score} />
 
       {onRetry && (
         <button
@@ -549,155 +606,6 @@ function OverallSpeechSummary({ qaPairs, sessionDuration }) {
   );
 }
 
-// ── Hidden share card rendered off-screen ────────────────────────────────────
-function ShareCard({ score, role, difficulty, strength, date, cardRef }) {
-  const gradient =
-    score >= 8
-      ? "from-emerald-500 to-teal-400"
-      : score >= 5
-        ? "from-yellow-400 to-amber-400"
-        : "from-red-500 to-rose-400";
-  const glow =
-    score >= 8
-      ? "rgba(16,185,129,0.4)"
-      : score >= 5
-        ? "rgba(245,158,11,0.3)"
-        : "rgba(239,68,68,0.3)";
-  return (
-    <div
-      ref={cardRef}
-      style={{
-        position: "fixed",
-        top: "-9999px",
-        left: "-9999px",
-        width: "480px",
-        padding: "40px",
-        background:
-          "linear-gradient(135deg, #020617 0%, #0f172a 50%, #020617 100%)",
-        fontFamily: "Inter, system-ui, sans-serif",
-      }}
-    >
-      {/* Logo */}
-      <div style={{ marginBottom: 24 }}>
-        <span style={{ fontSize: 28, fontWeight: 900, color: "#fff" }}>
-          Mock
-        </span>
-        <span
-          style={{
-            fontSize: 28,
-            fontWeight: 900,
-            background: "linear-gradient(135deg,#34d399,#06b6d4)",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
-          }}
-        >
-          Mate
-        </span>
-      </div>
-
-      {/* Score circle */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 24,
-          marginBottom: 28,
-        }}
-      >
-        <div
-          style={{
-            width: 100,
-            height: 100,
-            borderRadius: "50%",
-            background: `linear-gradient(135deg, ${gradient.includes("emerald") ? "#10b981,#14b8a6" : gradient.includes("yellow") ? "#f59e0b,#f97316" : "#ef4444,#f43f5e"})`,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            boxShadow: `0 0 40px ${glow}`,
-          }}
-        >
-          <span style={{ fontSize: 32, fontWeight: 900, color: "#fff" }}>
-            {parseFloat(score).toFixed(1)}
-          </span>
-          <span
-            style={{
-              fontSize: 11,
-              color: "rgba(255,255,255,0.6)",
-              fontWeight: 600,
-            }}
-          >
-            / 10
-          </span>
-        </div>
-        <div>
-          <p style={{ color: "#94a3b8", fontSize: 12, marginBottom: 4 }}>
-            Interview Score
-          </p>
-          <p
-            style={{
-              color: "#f1f5f9",
-              fontSize: 18,
-              fontWeight: 700,
-              marginBottom: 4,
-            }}
-          >
-            {role}
-          </p>
-          <p style={{ color: "#475569", fontSize: 12 }}>
-            {difficulty} level · {date}
-          </p>
-        </div>
-      </div>
-
-      {/* Strength */}
-      {strength && (
-        <div
-          style={{
-            background: "rgba(16,185,129,0.1)",
-            border: "1px solid rgba(16,185,129,0.25)",
-            borderRadius: 16,
-            padding: "14px 18px",
-            marginBottom: 20,
-          }}
-        >
-          <p
-            style={{
-              color: "#34d399",
-              fontSize: 11,
-              fontWeight: 700,
-              marginBottom: 6,
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
-            }}
-          >
-            🏆 Top Strength
-          </p>
-          <p style={{ color: "#d1fae5", fontSize: 13, lineHeight: 1.5 }}>
-            {strength}
-          </p>
-        </div>
-      )}
-
-      {/* Footer */}
-      <div
-        style={{
-          borderTop: "1px solid rgba(51,65,85,0.4)",
-          paddingTop: 16,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <span style={{ color: "#475569", fontSize: 11 }}>
-          Practise at MockMate — AI Interview Coach
-        </span>
-        <span style={{ color: "#334155", fontSize: 11 }}>Free to use</span>
-      </div>
-    </div>
-  );
-}
-
 function BodyLanguageCard({ metrics }) {
   if (!metrics || metrics.samplesCount < 30) return null;
 
@@ -775,22 +683,27 @@ export default function Debrief({
   faceMetrics,
   recording,
   onRetry,
+  // A session reopened from Sessions: { id, createdAt, debrief }. Nothing is regenerated.
+  saved = null,
+  onBack,
 }) {
-  const { theme } = useTheme();
-  const [debrief, setDebrief] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [debrief, setDebrief] = useState(saved?.debrief || null);
+  const [loading, setLoading] = useState(!saved);
   const [error, setError] = useState("");
-  const [exporting, setExporting] = useState(false);
-  const [sharing, setSharing] = useState(false);
   const [retryQ, setRetryQ] = useState(null);
   const [openIndex, setOpenIndex] = useState(null);
   const interviewerName = getInterviewer(interviewer).name;
-  const debriefRef = useRef(null);
-  const shareCardRef = useRef(null);
-  const savedToDB = useRef(false);
+  const savedToDB = useRef(Boolean(saved));
+  // Resolves to the saved session's id (or null), so retries can be stored with it
+  const sessionIdRef = useRef(Promise.resolve(saved?.id ?? null));
+  const sessionDate = new Date(saved?.createdAt || Date.now()).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
   // React runs effects twice in development; one debrief request is enough (and a
   // second, failing one could replace a good result with an error screen)
-  const requestedRef = useRef(false);
+  const requestedRef = useRef(Boolean(saved));
 
   useEffect(() => {
     if (requestedRef.current) return;
@@ -853,7 +766,7 @@ export default function Debrief({
 
         if (!savedToDB.current) {
           savedToDB.current = true;
-          saveSessionToDB(
+          sessionIdRef.current = saveSessionToDB(
             data,
             qaPairs,
             safeRole,
@@ -863,8 +776,25 @@ export default function Debrief({
             {
               faceMetrics: faceMetrics,
               language: normalizedLang,
+              // Everything this screen needs to be shown again from Sessions
+              report: {
+                debrief: data,
+                qa_pairs: qaPairs,
+                question_plan: questionPlan,
+                interviewer,
+                face_metrics: faceMetrics,
+                interview_type: interviewType,
+                language: normalizedLang,
+                duration,
+              },
             },
           );
+          // The video stays in this browser, stored under the new session's id
+          if (recording) {
+            sessionIdRef.current.then(async (id) => {
+              if (id) saveRecording(id, await (await fetch(recording)).blob());
+            });
+          }
         }
       } catch {
         setError(
@@ -878,90 +808,17 @@ export default function Debrief({
     fetchDebrief();
   }, [qaPairs, role, difficulty, duration]);
 
-  const handleExportPDF = async () => {
-    if (!debriefRef.current) return;
-    setExporting(true);
-    try {
-      // While exporting, every answer and the delivery section are rendered in full;
-      // wait for that render and its fade-in animations before capturing
-      await new Promise((resolve) => setTimeout(resolve, 900));
-      const [{ default: html2canvas }, jsPDFModule] = await Promise.all([
-        import("html2canvas"),
-        import("jspdf"),
-      ]);
-      const JsPDF = jsPDFModule.jsPDF || jsPDFModule.default;
-      const canvas = await html2canvas(debriefRef.current, {
-        backgroundColor: theme === 'dark' ? "#020617" : "#fdf8f0",
-        scale: 2,
-        useCORS: true,
-        logging: false,
-      });
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new JsPDF({ orientation: "p", unit: "mm", format: "a4" });
-      const pageW = pdf.internal.pageSize.getWidth(),
-        pageH = pdf.internal.pageSize.getHeight();
-      const imgH = (canvas.height * pageW) / canvas.width;
-      let heightLeft = imgH,
-        pos = 0;
-      pdf.addImage(imgData, "PNG", 0, pos, pageW, imgH);
-      heightLeft -= pageH;
-      while (heightLeft > 0) {
-        pos = heightLeft - imgH;
-        pdf.addPage();
-        pdf.addImage(imgData, "PNG", 0, pos, pageW, imgH);
-        heightLeft -= pageH;
-      }
-      pdf.save(
-        `MockMate-${(role || "Interview").replace(/\s+/g, "-")}-${new Date().toISOString().slice(0, 10)}.pdf`,
-      );
-    } catch (e) {
-      console.error("PDF export failed:", e);
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  const handleShare = async () => {
-    if (!shareCardRef.current) return;
-    setSharing(true);
-    try {
-      const { default: html2canvas } = await import("html2canvas");
-      const canvas = await html2canvas(shareCardRef.current, {
-        backgroundColor: "#020617",
-        scale: 2,
-        useCORS: true,
-        logging: false,
-      });
-      const blob = await new Promise((resolve) =>
-        canvas.toBlob(resolve, "image/png"),
-      );
-      const file = new File([blob], "mockmate-score.png", {
-        type: "image/png",
-      });
-      if (navigator.canShare?.({ files: [file] })) {
-        try {
-          await navigator.share({
-            files: [file],
-            title: "My MockMate Score",
-            text: `I scored ${parseFloat(debrief.overall_score).toFixed(1)}/10 on my MockMate interview!`,
-          });
-        } catch {
-          /* user cancelled */
-        }
-      } else {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "mockmate-score.png";
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-      }
-    } catch (e) {
-      console.error("Share failed:", e);
-    } finally {
-      setSharing(false);
-    }
-  };
+  // A retry from the answer modal: show it under that answer and keep it with the session
+  const handleRetryResult = useCallback((index, retry) => {
+    const attempt = { ...retry, created_at: new Date().toISOString() };
+    setDebrief((d) => ({
+      ...d,
+      answers: d.answers.map((a, i) =>
+        i === index ? { ...a, retries: [...(a.retries || []), attempt] } : a,
+      ),
+    }));
+    sessionIdRef.current.then((id) => id && saveRetry(id, index, retry));
+  }, []);
 
   if (loading) {
     return (
@@ -996,10 +853,10 @@ export default function Debrief({
           <p className="text-4xl mb-4">😕</p>
           <p className="text-red-400 mb-5">{error}</p>
           <button
-            onClick={onRetry}
+            onClick={onBack || onRetry}
             className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-bold px-8 py-3 rounded-2xl transition-all hover:scale-105 shadow-lg shadow-emerald-500/30"
           >
-            Try Again
+            {onBack ? "← Back to sessions" : "← Back to dashboard"}
           </button>
         </div>
       </div>
@@ -1010,30 +867,21 @@ export default function Debrief({
     <div className="min-h-screen dark:bg-slate-950 py-6 sm:py-10 px-3 sm:px-4 relative overflow-clip">
       <BgOrbs />
 
-      {/* Hidden share card (captured off-screen) */}
-      {debrief && (
-        <ShareCard
-          cardRef={shareCardRef}
-          score={debrief.overall_score}
-          role={role}
-          difficulty={difficulty || "Mid"}
-          strength={debrief.top_strength}
-          date={new Date().toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-          })}
-        />
-      )}
-
       <div
         className={`relative z-10 mx-auto space-y-6 ${hasDelivery ? "max-w-6xl" : "max-w-3xl"}`}
-        ref={debriefRef}
       >
         {/* Hero */}
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="text-sm font-semibold text-slate-500 hover:text-emerald-500 transition-colors"
+          >
+            ← Back to sessions
+          </button>
+        )}
         <div className="text-center animate-fade-up">
           <p className="text-emerald-400 text-sm font-bold uppercase tracking-widest mb-2">
-            ✅ Interview Complete
+            {saved ? `Session · ${sessionDate}` : "✅ Interview Complete"}
           </p>
           <h1 className="text-4xl font-black text-slate-900 dark:text-white mb-2">
             Your Full Debrief
@@ -1062,17 +910,6 @@ export default function Debrief({
           </div>
         </div>
 
-        {/* Full answer details — rendered only for the PDF export */}
-        {exporting && (
-          <div className="space-y-4">
-            {debrief.answers.map((item, i) => (
-              <div key={i} className="glass border border-slate-200 dark:border-slate-700/40 rounded-3xl p-5 sm:p-6">
-                <AnswerDetail item={item} index={i} interviewerName={interviewerName} />
-              </div>
-            ))}
-          </div>
-        )}
-
         </div>
 
         {/* Right column: delivery — speech, body language, recording */}
@@ -1080,7 +917,12 @@ export default function Debrief({
           <DeliveryPanel>
             <OverallSpeechSummary qaPairs={qaPairs} sessionDuration={duration} />
             <BodyLanguageCard metrics={faceMetrics} />
-            {recording && !exporting && (
+            {saved && !recording && (
+              <p className="text-xs text-slate-500 leading-relaxed px-1">
+                🎥 No recording in this browser: videos are kept only on the device where you did the interview.
+              </p>
+            )}
+            {recording && (
               <div className="glass border border-slate-200 dark:border-slate-700/40 rounded-3xl p-5 space-y-4">
                 <div>
                   <p className="text-slate-900 dark:text-white font-bold text-lg">
@@ -1099,7 +941,7 @@ export default function Debrief({
 
                 <a
                   href={recording}
-                  download={`MockMate-recording-${new Date().toISOString().slice(0, 10)}.webm`}
+                  download={`MockMate-recording-${new Date(saved?.createdAt || Date.now()).toISOString().slice(0, 10)}.webm`}
                   className="inline-flex items-center justify-center gap-2 glass-light border border-slate-200 dark:border-slate-700/50 hover:border-emerald-500/40 text-slate-600 dark:text-slate-300 hover:text-emerald-400 font-semibold px-5 py-3 rounded-2xl transition-all"
                 >
                   ⬇️ Download Recording
@@ -1111,78 +953,13 @@ export default function Debrief({
         </div>
       </div>
 
-      {/* Action buttons — outside ref */}
+      {/* Leave the debrief: to the dashboard, or back to the list for a saved session */}
       <div className={`relative z-10 mx-auto mt-10 flex flex-col sm:flex-row ${hasDelivery ? "max-w-6xl" : "max-w-3xl"} flex-wrap items-stretch sm:items-center justify-center gap-3 pb-10 px-4 sm:px-0`}>
-        {/* Share */}
         <button
-          onClick={handleShare}
-          disabled={sharing}
-          className="flex items-center justify-center gap-2 glass border border-slate-200 dark:border-slate-700/50 hover:border-slate-400 dark:hover:border-slate-600 disabled:opacity-50 text-slate-600 dark:text-slate-300 font-semibold px-5 py-3.5 rounded-2xl transition-all hover:bg-slate-100 dark:hover:bg-slate-800/60"
-        >
-          {sharing ? (
-            <svg
-              className="animate-spin w-4 h-4"
-              viewBox="0 0 24 24"
-              fill="none"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              />
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8v8H4z"
-              />
-            </svg>
-          ) : (
-            "🖼️"
-          )}
-          {sharing ? "Generating..." : "Share Score Card"}
-        </button>
-
-        {/* PDF */}
-        <button
-          onClick={handleExportPDF}
-          disabled={exporting}
-          className="flex items-center justify-center gap-2 glass border border-slate-200 dark:border-slate-700/50 hover:border-slate-400 dark:hover:border-slate-600 disabled:opacity-50 text-slate-600 dark:text-slate-300 font-semibold px-5 py-3.5 rounded-2xl transition-all hover:bg-slate-100 dark:hover:bg-slate-800/60"
-        >
-          {exporting ? (
-            <svg
-              className="animate-spin w-4 h-4"
-              viewBox="0 0 24 24"
-              fill="none"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              />
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8v8H4z"
-              />
-            </svg>
-          ) : (
-            "📄"
-          )}
-          {exporting ? "Exporting..." : "Download PDF"}
-        </button>
-
-        {/* Retry full interview */}
-        <button
-          onClick={onRetry}
+          onClick={onBack || onRetry}
           className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-bold px-10 py-3.5 rounded-2xl transition-all hover:scale-105 shadow-xl shadow-emerald-500/30 hover:shadow-emerald-500/50"
         >
-          🎙 Try Again
+          {onBack ? "← Back to sessions" : "← Back to dashboard"}
         </button>
       </div>
 
@@ -1198,6 +975,7 @@ export default function Debrief({
             const item = debrief.answers[i];
             setOpenIndex(null);
             setRetryQ({
+              index: i,
               question: item.question,
               originalScore: item.score,
               competency: item.competency,
@@ -1218,7 +996,12 @@ export default function Debrief({
           language={language}
           competency={retryQ.competency}
           strongAnswer={retryQ.strongAnswer}
-          onClose={() => setRetryQ(null)}
+          onResult={(retry) => handleRetryResult(retryQ.index, retry)}
+          onClose={() => {
+            // Back to the answer, where the new attempt now shows up
+            setOpenIndex(retryQ.index);
+            setRetryQ(null);
+          }}
         />
       )}
     </div>

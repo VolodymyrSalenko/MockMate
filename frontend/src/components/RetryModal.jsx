@@ -54,7 +54,7 @@ function ScoreDiff({ original, updated }) {
   )
 }
 
-export default function RetryModal({ question, originalScore, role, difficulty = 'Mid', language = 'en-US', competency, strongAnswer, interviewer, onClose }) {
+export default function RetryModal({ question, originalScore, role, difficulty = 'Mid', language = 'en-US', competency, strongAnswer, interviewer, onResult, onClose }) {
   const [phase,         setPhase]         = useState('intro')   // intro | idle | listening | thinking | result
   const [transcript,    setTranscript]    = useState('')
   const [result,        setResult]        = useState(null)
@@ -86,14 +86,24 @@ export default function RetryModal({ question, originalScore, role, difficulty =
       })
       if (!res.ok) throw new Error('Debrief failed')
       const data = await res.json()
-      setResult(data.answers?.[0] || null)
+      const evaluated = data.answers?.[0] || null
+      setResult(evaluated)
       setPhase('result')
+      if (evaluated) {
+        onResult?.({
+          answer:       text,
+          score:        evaluated.score,
+          feedback:     evaluated.feedback,
+          tip:          evaluated.tip,
+          ideal_answer: evaluated.ideal_answer,
+        })
+      }
     } catch {
       setError('Could not evaluate your answer. Please try again.')
       setPhase('idle')
       canRecordRef.current = true
     }
-  }, [question, role, difficulty, language, competency, strongAnswer])
+  }, [question, role, difficulty, language, competency, strongAnswer, onResult])
 
   const { start, stop, isListening, interimTranscript } = useSTT({
     onFinalTranscript: handleFinalTranscript,

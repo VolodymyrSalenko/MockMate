@@ -1,6 +1,7 @@
 import { useCallback, useRef } from 'react'
 import { BACKEND_URL } from '../utils/config'
 import { getStoredToken } from '../context/AuthContext'
+import { routeToRecording } from '../utils/recordingMix'
 
 function browserSpeak(text, onEnd, onStart) {
   const utter = new SpeechSynthesisUtterance(text)
@@ -93,6 +94,7 @@ export function useTTS({ language = 'en-US', interviewer, voice } = {}) {
       if (genRef.current !== myGen) { URL.revokeObjectURL(url); return }
       const audio = new Audio(url)
       audioRef.current = audio
+      routeToRecording(audio)   // the question is heard in the interview recording too
       audio.onplaying = () => {
         if (genRef.current === myGen && onStart) onStart()
       }
