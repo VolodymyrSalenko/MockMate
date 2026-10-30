@@ -80,7 +80,6 @@ export async function saveSessionToDB(debrief, qaPairs, role, difficulty, interv
       tip:             a.tip,
       ideal_answer:    a.ideal_answer,
       analytics:       qaPairs[i]?.analytics || null,
-      ai_answer_score: debrief.ai_detailed?.[i]?.score ?? null,
     }))
 
     const fm = opts.faceMetrics
@@ -107,8 +106,6 @@ export async function saveSessionToDB(debrief, qaPairs, role, difficulty, interv
         language:         opts.language      || 'en-US',
         company_name:     opts.companyName   || null,
         candidate_name:   opts.candidateName || null,
-        ai_score:         opts.aiScore       ?? null,
-        ai_verdict:       opts.aiVerdict     || null,
         face_metrics,
       }),
     })

@@ -82,7 +82,7 @@ const TILE_LABEL = 'absolute bottom-2.5 left-2.5 sm:bottom-3 sm:left-3 flex item
 // Both loops start on a frame that matches the still, and each restarts from
 // there, so going from still to video has no jump.
 // Missing files fall back to the photo, and then to the initial.
-const FADE_MS = 350
+const FADE_MS = 450
 
 function InterviewerTile({ interviewer, status }) {
   const speaking  = status === 'speaking'

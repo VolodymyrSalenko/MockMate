@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
+import { getStoredToken } from '../context/AuthContext'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
 
@@ -15,6 +16,7 @@ export function useMediaRecorder() {
     formData.append('file', blob, 'interview-recording.webm')
     const response = await fetch(`${BACKEND_URL}/upload-recording`, {
       method: 'POST',
+      headers: { Authorization: `Bearer ${getStoredToken()}` },
       body: formData,
     })
     if (!response.ok) throw new Error('Recording upload failed')

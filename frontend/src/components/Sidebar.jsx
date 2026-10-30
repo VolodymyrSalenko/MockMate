@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
-import { IconMic, IconBarChart, IconList, IconDocument } from '../utils/icons'
+import { IconMic, IconBarChart, IconList } from '../utils/icons'
 
 function PanelIcon() {
   return (

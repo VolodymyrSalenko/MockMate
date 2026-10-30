@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine,
-  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Legend,
+  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
 } from 'recharts'
 import { fetchSessions, fetchFillerStats, deleteSession } from '../utils/api'
 import { durationLabel } from '../utils/speechAnalytics'
@@ -9,7 +9,7 @@ import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import {
   scoreBg, scoreColor, scoreHex,
-  formatDate, formatShort, difficultyBadge, typeBadge, langInfo, avgArr,
+  formatDate, formatShort, langInfo, avgArr,
 } from '../utils/scoring'
 import { IconList, IconStar, IconTarget, IconTrophy, IconFlame, IconGlobe, IconBarChart, IconMic } from '../utils/icons'
 
@@ -31,30 +31,6 @@ function calcStreak(sessions) {
   }
   return streak
 }
-
-// ── Interview Readiness Score ─────────────────────────────────────────────────
-function calcReadiness(sessions) {
-  if (!sessions.length) return 0
-  const scored     = sessions.filter(s => s.overall_score != null)
-  const avgContent = avgArr(scored.map(s => s.overall_score)) || 0
-  const streak     = calcStreak(sessions)
-
-  // Trend: compare last 3 vs previous 3
-  const last3 = scored.slice(0, 3).map(s => s.overall_score)
-  const prev3 = scored.slice(3, 6).map(s => s.overall_score)
-  const trendBonus = prev3.length
-    ? (avgArr(last3) > avgArr(prev3) + 0.3 ? 10 : avgArr(last3) < avgArr(prev3) - 0.3 ? 0 : 5)
-    : 5
-
-  const contentPart  = (avgContent / 10) * 60   // max 60
-  const streakPart   = Math.min(streak * 4, 20) // max 20
-  const volumePart   = Math.min(sessions.length * 2, 10) // max 10
-
-  return Math.min(Math.round(contentPart + trendBonus + streakPart + volumePart), 100)
-}
-
-function readinessColor(r) { return r >= 75 ? 'text-emerald-400' : r >= 50 ? 'text-yellow-400' : 'text-red-400' }
-function readinessLabel(r) { return r >= 75 ? 'Interview Ready' : r >= 50 ? 'Getting There' : r >= 25 ? 'Keep Practising' : 'Just Starting' }
 
 // ── Stat card ─────────────────────────────────────────────────────────────────
 function StatCard({ icon, label, value, sub, color = 'text-slate-900 dark:text-white' }) {
@@ -330,7 +306,6 @@ export default function Dashboard({ onNavigate }) {
   const totalSeconds = sessions.reduce((a, s) => a + (s.duration_seconds || 0), 0)
   const thisMonth    = sessions.filter(s => { const d = new Date(s.created_at), n = new Date(); return d.getMonth()===n.getMonth()&&d.getFullYear()===n.getFullYear() }).length
   const streak       = calcStreak(sessions)
-  const readiness    = calcReadiness(sessions)
   const recent       = sessions.slice(0, 3)
 
   // ── Breakdowns ──────────────────────────────────────────────────────────────
