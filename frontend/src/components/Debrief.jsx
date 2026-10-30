@@ -449,19 +449,16 @@ function AnswerModal({ answers, index, interviewerName, onClose, onNavigate, onR
   );
 }
 
-// Block 3: how you spoke and came across — collapsed by default
-function DeliverySection({ open, onToggle, children }) {
+// Right column: how you spoke and came across — always visible next to the answers
+function DeliveryPanel({ children }) {
   return (
-    <div className="glass border border-slate-200 dark:border-slate-700/40 rounded-3xl animate-fade-up" style={{ animationDelay: "0.2s" }}>
-      <button onClick={onToggle} className="w-full flex items-center justify-between gap-3 px-5 sm:px-6 py-4 text-left">
-        <span>
-          <span className="block text-slate-900 dark:text-white font-bold text-lg">🗣 How you spoke</span>
-          <span className="block text-slate-500 text-xs mt-0.5">Pace, filler words, body language and your recording</span>
-        </span>
-        <span className="text-slate-500 text-sm">{open ? "▲" : "▼"}</span>
-      </button>
-      {open && <div className="px-3 sm:px-4 pb-4 space-y-4">{children}</div>}
-    </div>
+    <aside className="space-y-4 lg:sticky lg:top-6 animate-fade-up" style={{ animationDelay: "0.15s" }}>
+      <div>
+        <h2 className="text-slate-900 dark:text-white font-black text-xl">How you spoke</h2>
+        <p className="text-slate-500 text-xs mt-0.5">Pace, filler words, body language and your recording</p>
+      </div>
+      {children}
+    </aside>
   );
 }
 
@@ -528,18 +525,17 @@ function OverallSpeechSummary({ qaPairs, sessionDuration }) {
 
   return (
     <div
-      className="glass border border-slate-200 dark:border-slate-700/40 rounded-3xl p-6 space-y-4 animate-fade-up"
-      style={{ animationDelay: "0.1s" }}
+      className="glass border border-slate-200 dark:border-slate-700/40 rounded-3xl p-5 space-y-4"
     >
       <p className="text-slate-900 dark:text-white font-bold text-lg">🗣 Speech Performance</p>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-3 gap-3 lg:gap-2">
         {stats.map((s, i) => (
           <div
             key={i}
-            className="bg-slate-100 dark:bg-slate-900/60 rounded-2xl p-4 text-center animate-stat-in"
+            className="bg-slate-100 dark:bg-slate-900/60 rounded-2xl p-4 lg:px-2 lg:py-3 text-center animate-stat-in"
             style={{ animationDelay: `${i * 0.07}s` }}
           >
-            <p className={`text-2xl font-black ${s.color}`}>{s.value}</p>
+            <p className={`text-2xl lg:text-lg font-black ${s.color}`}>{s.value}</p>
             <p className="text-slate-600 dark:text-slate-400 text-xs mt-1">{s.label}</p>
           </div>
         ))}
@@ -735,7 +731,7 @@ function BodyLanguageCard({ metrics }) {
         : `Strong body language overall — consistent eye contact and stable posture.`;
 
   return (
-    <div className="glass border border-slate-200 dark:border-slate-700/40 rounded-3xl p-6 space-y-4 animate-fade-up" style={{ animationDelay: "0.12s" }}>
+    <div className="glass border border-slate-200 dark:border-slate-700/40 rounded-3xl p-5 space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-slate-900 dark:text-white font-bold text-lg">👁 Body Language</p>
         <span className={`text-2xl font-black ${confColor}`}>{conf.toFixed(1)}<span className="text-slate-600 text-sm font-normal">/10</span></span>
@@ -789,7 +785,6 @@ export default function Debrief({
   const [retryQ, setRetryQ] = useState(null);
   const [openIndex, setOpenIndex] = useState(null);
   const interviewerName = getInterviewer(interviewer).name;
-  const [deliveryOpen, setDeliveryOpen] = useState(false);
   const debriefRef = useRef(null);
   const shareCardRef = useRef(null);
   const savedToDB = useRef(false);
@@ -1012,7 +1007,7 @@ export default function Debrief({
   }
 
   return (
-    <div className="min-h-screen dark:bg-slate-950 py-6 sm:py-10 px-3 sm:px-4 relative overflow-hidden">
+    <div className="min-h-screen dark:bg-slate-950 py-6 sm:py-10 px-3 sm:px-4 relative overflow-clip">
       <BgOrbs />
 
       {/* Hidden share card (captured off-screen) */}
@@ -1032,7 +1027,7 @@ export default function Debrief({
       )}
 
       <div
-        className="relative z-10 max-w-3xl mx-auto space-y-6"
+        className={`relative z-10 mx-auto space-y-6 ${hasDelivery ? "max-w-6xl" : "max-w-3xl"}`}
         ref={debriefRef}
       >
         {/* Hero */}
@@ -1049,6 +1044,8 @@ export default function Debrief({
           </p>
         </div>
 
+        <div className={hasDelivery ? "grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_400px] gap-6 items-start" : ""}>
+        <div className="space-y-6 min-w-0">
         {/* Block 1: one score, recruiter decision, main takeaways */}
         <SummaryCard debrief={debrief} />
 
@@ -1058,7 +1055,7 @@ export default function Debrief({
             <h2 className="text-slate-900 dark:text-white font-black text-xl">Your answers</h2>
             <p className="text-slate-500 text-xs">Click a question to see the full feedback</p>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 ${hasDelivery ? "2xl:grid-cols-3" : "lg:grid-cols-3"}`}>
             {debrief.answers.map((item, i) => (
               <AnswerTile key={i} item={item} index={i} onOpen={() => setOpenIndex(i)} />
             ))}
@@ -1076,13 +1073,15 @@ export default function Debrief({
           </div>
         )}
 
-        {/* Block 3: delivery — speech, body language, recording */}
+        </div>
+
+        {/* Right column: delivery — speech, body language, recording */}
         {hasDelivery && (
-          <DeliverySection open={deliveryOpen || exporting} onToggle={() => setDeliveryOpen((o) => !o)}>
+          <DeliveryPanel>
             <OverallSpeechSummary qaPairs={qaPairs} sessionDuration={duration} />
             <BodyLanguageCard metrics={faceMetrics} />
             {recording && !exporting && (
-              <div className="glass border border-slate-200 dark:border-slate-700/40 rounded-3xl p-6 space-y-4">
+              <div className="glass border border-slate-200 dark:border-slate-700/40 rounded-3xl p-5 space-y-4">
                 <div>
                   <p className="text-slate-900 dark:text-white font-bold text-lg">
                     🎥 Interview Recording
@@ -1107,12 +1106,13 @@ export default function Debrief({
                 </a>
               </div>
             )}
-          </DeliverySection>
+          </DeliveryPanel>
         )}
+        </div>
       </div>
 
       {/* Action buttons — outside ref */}
-      <div className="relative z-10 max-w-3xl mx-auto mt-10 flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-center gap-3 pb-10 px-4 sm:px-0">
+      <div className={`relative z-10 mx-auto mt-10 flex flex-col sm:flex-row ${hasDelivery ? "max-w-6xl" : "max-w-3xl"} flex-wrap items-stretch sm:items-center justify-center gap-3 pb-10 px-4 sm:px-0`}>
         {/* Share */}
         <button
           onClick={handleShare}
