@@ -3,7 +3,7 @@ import { useTTS } from '../hooks/useTTS'
 import { useSTT } from '../hooks/useSTT'
 import { useFaceAnalysis } from '../hooks/useFaceAnalysis'
 import { useMediaRecorder } from '../hooks/useMediaRecorder'
-import { analyzeAnswer, getHints, wpmColor, durationLabel } from '../utils/speechAnalytics'
+import { analyzeAnswer } from '../utils/speechAnalytics'
 import { getStoredToken } from '../context/AuthContext'
 import { getInterviewer, getVoice } from '../utils/interviewers'
 
@@ -263,43 +263,6 @@ const YouTile = forwardRef(function YouTile({ stream, metrics, listening, onTurn
   )
 })
 
-function HintCard({ hints, analytics, questionIndex }) {
-  const [open, setOpen] = useState(true)
-  if (!hints.length) return null
-  const isBehavioral = questionIndex <= 1
-  const iconMap = { warning: '⚠️', info: '💡', star: '⭐' }
-  return (
-    <div>
-      <div className="w-full glass-light border border-amber-500/25 rounded-2xl overflow-hidden">
-        <button onClick={() => setOpen(o => !o)}
-          className="w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-white/5 transition">
-          <div className="flex items-center gap-2">
-            <span className="text-amber-400 text-xs font-bold uppercase tracking-widest">Coach Feedback</span>
-            {!open && <span className="text-slate-500 text-xs">({hints.length} tip{hints.length > 1 ? 's' : ''})</span>}
-          </div>
-          <span className="text-slate-600 text-xs">{open ? '▲' : '▼'}</span>
-        </button>
-        {open && (
-          <div className="px-4 pb-4 space-y-3 border-t border-slate-200 dark:border-slate-700/30 pt-3">
-            <div className="flex flex-wrap gap-2 text-xs">
-              {analytics.durationSeconds > 0 && <span className="bg-slate-100 dark:bg-slate-800/80 rounded-full px-2.5 py-1 text-slate-700 dark:text-slate-300">⏱ {durationLabel(analytics.durationSeconds)}</span>}
-              {analytics.wpm > 0 && <span className={`bg-slate-100 dark:bg-slate-800/80 rounded-full px-2.5 py-1 ${wpmColor(analytics.wpm)}`}>{analytics.wpm} wpm</span>}
-              {analytics.totalFillers > 0 && <span className="bg-slate-100 dark:bg-slate-800/80 rounded-full px-2.5 py-1 text-orange-400">{analytics.totalFillers} filler{analytics.totalFillers > 1 ? 's' : ''}</span>}
-              {isBehavioral && <span className={`bg-slate-100 dark:bg-slate-800/80 rounded-full px-2.5 py-1 ${analytics.starScore === 4 ? 'text-emerald-400' : analytics.starScore >= 2 ? 'text-yellow-400' : 'text-red-400'}`}>STAR {analytics.starScore}/4</span>}
-            </div>
-            {hints.map((hint, i) => (
-              <div key={i} className="space-y-1">
-                <p className="text-slate-700 dark:text-slate-300 text-xs leading-relaxed">{iconMap[hint.type] || '💡'} {hint.text}</p>
-                {hint.better && <p className="text-emerald-400 text-xs leading-relaxed pl-3 border-l-2 border-emerald-500/40">Better: {hint.better}</p>}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
 // ── Transcript slide-in panel ────────────────────────────────────────────────
 function TranscriptPanel({ log, interviewerName, onClose }) {
   return (
@@ -310,7 +273,7 @@ function TranscriptPanel({ log, interviewerName, onClose }) {
         <button onClick={onClose} className="text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition text-lg leading-none">✕</button>
       </div>
       <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3 text-sm">
-        {log.filter(m => m.role !== 'coach').map((msg, i) => (
+        {log.map((msg, i) => (
           <div key={i}>
             <p className={`text-xs font-bold uppercase tracking-widest mb-1 ${msg.role === 'assistant' ? 'text-emerald-400/70' : 'text-slate-500'}`}>
               {msg.role === 'assistant' ? interviewerName : 'You'}
@@ -318,7 +281,7 @@ function TranscriptPanel({ log, interviewerName, onClose }) {
             <p className="text-slate-700 dark:text-slate-300 leading-relaxed">{msg.content}</p>
           </div>
         ))}
-        {log.filter(m => m.role !== 'coach').length === 0 && (
+        {log.length === 0 && (
           <p className="text-slate-600 text-xs">Transcript will appear here as the interview progresses.</p>
         )}
       </div>
@@ -434,14 +397,10 @@ export default function Interview({ sessionData, onComplete, onExit }) {
     const durationSeconds = recordingStartRef.current ? (Date.now() - recordingStartRef.current) / 1000 : 0
     recordingStartRef.current = null
     const idx       = currentIndexRef.current
+    // Speech stats are kept for the final report; no feedback is shown during the interview
     const analytics = analyzeAnswer(transcript, durationSeconds)
-    const hints     = getHints(analytics, idx)
 
-    setConversationLog(prev => [
-      ...prev,
-      { role: 'user', content: transcript },
-      ...(hints.length ? [{ role: 'coach', hints, analytics, questionIndex: idx }] : []),
-    ])
+    setConversationLog(prev => [...prev, { role: 'user', content: transcript }])
     const newHistory = [...history, { role: 'user', content: transcript }]
     setStatus('thinking')
 
@@ -628,12 +587,10 @@ export default function Interview({ sessionData, onComplete, onExit }) {
   const isThinking  = status === 'thinking'
   const progressPct = Math.round((currentQuestionIndex / questions.length) * 100)
 
-  // Captions: the interviewer's latest line, your answer to it, and the latest coach tips
+  // Captions: the interviewer's latest line and your answer to it
   const lastInterviewerIdx = conversationLog.map(m => m.role).lastIndexOf('assistant')
   const lastLine    = lastInterviewerIdx >= 0 ? conversationLog[lastInterviewerIdx] : null
   const yourAnswer  = conversationLog.slice(lastInterviewerIdx + 1).find(m => m.role === 'user')
-  const coachIdx    = conversationLog.map(m => m.role).lastIndexOf('coach')
-  const lastCoach   = coachIdx >= 0 ? conversationLog[coachIdx] : null
   const yourLine    = interimTranscript || yourAnswer?.content
 
   const roundBtn = 'w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition-all duration-200 border'
@@ -733,10 +690,6 @@ export default function Interview({ sessionData, onComplete, onExit }) {
                   {interimTranscript && <span className="inline-block w-0.5 h-4 bg-emerald-400 ml-1 animate-pulse align-middle" />}
                 </p>
               </div>
-            )}
-
-            {lastCoach && !isListening && (
-              <HintCard key={coachIdx} hints={lastCoach.hints} analytics={lastCoach.analytics} questionIndex={lastCoach.questionIndex} />
             )}
 
             {conversationLog.length > 1 && (

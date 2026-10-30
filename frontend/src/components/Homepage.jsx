@@ -29,8 +29,8 @@ const FEATURES = [
         <path d="M9 18h6M10 22h4"/>
       </svg>
     ),
-    title: 'Live AI Coaching',
-    desc: 'Instant hints after each answer: STAR framework coverage, pacing tips, filler word count.',
+    title: 'Realistic, Uninterrupted Interview',
+    desc: 'Questions flow one after another, just like the real thing. Your STAR coverage, pace and filler words are analysed for the final report.',
     pro: false,
   },
   {
@@ -189,7 +189,7 @@ export default function Homepage({ onLogin, onRegister }) {
           className="text-slate-600 dark:text-slate-400 text-lg sm:text-xl max-w-lg mb-8 leading-relaxed animate-fade-up"
           style={{ animationDelay: '0.1s' }}
         >
-          Practice with an AI interviewer, get real-time coaching hints, and walk in with confidence.
+          Practice with an AI interviewer, get a detailed debrief, and walk in with confidence.
         </p>
 
         <div className="flex gap-3 animate-fade-up" style={{ animationDelay: '0.15s' }}>
