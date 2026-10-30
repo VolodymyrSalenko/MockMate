@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { fetchSessions, fetchSessionDetail } from '../utils/api'
+import { fetchSessions, fetchSessionDetail, deleteSession } from '../utils/api'
 import { durationLabel } from '../utils/speechAnalytics'
 import {
   scoreBg,
@@ -169,17 +169,20 @@ function SessionDetail({ session }) {
 }
 
 // ── Session card ──────────────────────────────────────────────────────────────
-function SessionCard({ session, index }) {
-  const [open, setOpen] = useState(false)
+function SessionCard({ session, index, onDelete }) {
+  const [open,       setOpen]       = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [deleting,   setDeleting]   = useState(false)
   const score = session.overall_score
   const flag  = langFlag(session.language)
 
   return (
     <div
-      className="glass border border-slate-200 dark:border-slate-700/40 rounded-2xl overflow-hidden hover:border-slate-400 dark:hover:border-slate-600/60 transition-all duration-300"
+      className="group glass border border-slate-200 dark:border-slate-700/40 rounded-2xl overflow-hidden hover:border-slate-400 dark:hover:border-slate-600/60 transition-all duration-300"
       style={{ animationDelay: `${index * 0.04}s` }}
     >
-      <button onClick={() => setOpen(o => !o)} className="w-full flex items-center gap-3 p-4 text-left">
+      <div className="flex items-center pr-3">
+      <button onClick={() => setOpen(o => !o)} className="flex-1 min-w-0 flex items-center gap-3 p-4 text-left">
         <div className={`w-11 h-11 rounded-full flex items-center justify-center text-sm font-black flex-shrink-0 border ${scoreBg(score)}`}>
           {score != null ? parseFloat(score).toFixed(1) : '–'}
         </div>
@@ -203,6 +206,37 @@ function SessionCard({ session, index }) {
         <span className="text-slate-600 dark:text-slate-400 text-xs flex-shrink-0">{open ? '▲' : '▼'}</span>
       </button>
 
+      {/* Delete, with a confirmation step */}
+      {confirming ? (
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <span className="text-slate-500 dark:text-slate-400 text-xs">Delete?</span>
+          <button
+            onClick={async () => { setDeleting(true); await onDelete(session.id); setDeleting(false); setConfirming(false) }}
+            disabled={deleting}
+            className="text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 text-xs font-bold px-2 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 transition-colors disabled:opacity-50"
+          >
+            {deleting ? '…' : 'Yes'}
+          </button>
+          <button
+            onClick={() => setConfirming(false)}
+            className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 text-xs px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700/40 transition-colors"
+          >
+            No
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => setConfirming(true)}
+          title="Delete session"
+          className="sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-all flex-shrink-0 p-2 rounded-lg hover:bg-red-500/10"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
+      )}
+      </div>
+
       {open && (
         <div className="px-4 pb-4">
           <SessionDetail session={session} />
@@ -222,6 +256,10 @@ export default function Sessions({ onNavigate }) {
   useEffect(() => {
     fetchSessions().then(data => { setSessions(data); setLoading(false) })
   }, [])
+
+  const handleDelete = async (id) => {
+    if (await deleteSession(id)) setSessions(list => list.filter(s => s.id !== id))
+  }
 
   const visible = sessions
     .filter(s => filter === 'All' || s.difficulty === filter)
@@ -298,7 +336,7 @@ export default function Sessions({ onNavigate }) {
               <p className="text-slate-600 dark:text-slate-400 text-sm text-center py-8">No sessions match your filter.</p>
             ) : (
               <div className="space-y-3">
-                {visible.map((s, i) => <SessionCard key={s.id} session={s} index={i} />)}
+                {visible.map((s, i) => <SessionCard key={s.id} session={s} index={i} onDelete={handleDelete} />)}
               </div>
             )}
           </>

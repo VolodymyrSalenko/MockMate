@@ -3,13 +3,13 @@ import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine,
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
 } from 'recharts'
-import { fetchSessions, fetchFillerStats, deleteSession } from '../utils/api'
+import { fetchSessions, fetchFillerStats } from '../utils/api'
 import { durationLabel } from '../utils/speechAnalytics'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import {
-  scoreBg, scoreColor, scoreHex,
-  formatDate, formatShort, langInfo, avgArr,
+  scoreColor, scoreHex,
+  formatShort, langInfo, avgArr,
 } from '../utils/scoring'
 import { IconList, IconStar, IconTarget, IconTrophy, IconFlame, IconGlobe, IconBarChart, IconMic } from '../utils/icons'
 
@@ -279,7 +279,6 @@ export default function Dashboard({ onNavigate }) {
   const [loading,       setLoading]       = useState(true)
   const [refreshing,    setRefreshing]    = useState(false)
   const [lastRefreshed, setLastRefreshed] = useState(null)
-  const [confirmDelete, setConfirmDelete] = useState(null) // session id pending confirmation
 
   const refresh = useCallback(async (showSpinner = false) => {
     if (showSpinner) setRefreshing(true)
@@ -293,12 +292,6 @@ export default function Dashboard({ onNavigate }) {
 
   useEffect(() => { refresh() }, [refresh])
 
-  const handleDelete = async (id) => {
-    await deleteSession(id)
-    setConfirmDelete(null)
-    refresh(false)
-  }
-
   const firstName    = user?.name?.split(' ')[0] || 'there'
   const scored       = sessions.filter(s => s.overall_score != null)
   const avgScore     = scored.length ? avgArr(scored.map(s => s.overall_score)) : null
@@ -306,7 +299,6 @@ export default function Dashboard({ onNavigate }) {
   const totalSeconds = sessions.reduce((a, s) => a + (s.duration_seconds || 0), 0)
   const thisMonth    = sessions.filter(s => { const d = new Date(s.created_at), n = new Date(); return d.getMonth()===n.getMonth()&&d.getFullYear()===n.getFullYear() }).length
   const streak       = calcStreak(sessions)
-  const recent       = sessions.slice(0, 3)
 
   // ── Breakdowns ──────────────────────────────────────────────────────────────
   const byLanguage = Object.entries(
@@ -424,47 +416,6 @@ export default function Dashboard({ onNavigate }) {
 
             {/* ── Step 4: Filler words ── */}
             <FillerWordsPanel fillers={fillers} />
-
-            {/* ── Recent sessions teaser ── */}
-            <div className="glass border border-slate-200 dark:border-slate-700/40 rounded-2xl p-5">
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-slate-900 dark:text-white font-bold">Recent Sessions</p>
-                <button onClick={() => onNavigate('sessions')} className="text-emerald-400 hover:text-emerald-300 text-xs font-semibold transition-colors">
-                  View all {sessions.length} →
-                </button>
-              </div>
-              <div className="space-y-2">
-                {recent.map(s => (
-                  <div key={s.id} className="flex items-center gap-3 py-2 border-b border-slate-200 dark:border-slate-800/60 last:border-0 group">
-                    <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-black flex-shrink-0 border ${scoreBg(s.overall_score)}`}>
-                      {s.overall_score != null ? parseFloat(s.overall_score).toFixed(1) : '–'}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-slate-700 dark:text-slate-200 text-sm font-semibold truncate">{s.role || 'Interview'}</p>
-                      <p className="text-slate-600 dark:text-slate-400 text-xs">{formatDate(s.created_at)} · {s.difficulty || 'Mid'} · {langInfo(s.language||'en-US').flag}</p>
-                    </div>
-                    {/* Delete control */}
-                    {confirmDelete === s.id ? (
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        <span className="text-slate-400 text-xs">Delete?</span>
-                        <button onClick={() => handleDelete(s.id)} className="text-red-400 hover:text-red-300 text-xs font-bold px-2 py-0.5 rounded bg-red-500/10 hover:bg-red-500/20 transition-colors">Yes</button>
-                        <button onClick={() => setConfirmDelete(null)} className="text-slate-500 hover:text-slate-300 text-xs px-2 py-0.5 rounded hover:bg-slate-700/40 transition-colors">No</button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => setConfirmDelete(s.id)}
-                        title="Delete session"
-                        className="opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-all flex-shrink-0 p-1 rounded"
-                      >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
 
             {/* ── Refresh footer ── */}
             <div className="flex items-center justify-between pt-2">
