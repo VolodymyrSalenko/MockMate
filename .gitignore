@@ -19,3 +19,6 @@ dist/
 # Claude Code
 .claude/
 backend/recordings/
+
+# Source clips for interviewer videos (processed copies live next to them)
+frontend/public/interviewers/raw/

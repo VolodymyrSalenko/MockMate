@@ -5,44 +5,41 @@ import { useFaceAnalysis } from '../hooks/useFaceAnalysis'
 import { useMediaRecorder } from '../hooks/useMediaRecorder'
 import { analyzeAnswer, getHints, wpmColor, durationLabel } from '../utils/speechAnalytics'
 import { getStoredToken } from '../context/AuthContext'
+import { getInterviewer, getVoice } from '../utils/interviewers'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
 
 const MicIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
     <path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/>
     <path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4M8 22h8"/>
   </svg>
 )
 
 const CameraIcon = ({ on }) => on ? (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
     <path d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.89L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
   </svg>
 ) : (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
     <path d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.89L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2zM3 3l18 18"/>
   </svg>
 )
 
-const WAVEFORM_HEIGHTS   = [0.35, 0.65, 0.50, 0.90, 0.70, 1.0, 0.55, 0.80, 0.45, 0.75, 0.35, 0.60, 0.85]
-const WAVEFORM_DURATIONS = [0.45, 0.38, 0.52, 0.40, 0.48, 0.35, 0.50, 0.42, 0.55, 0.38, 0.45, 0.41, 0.49]
+const TranscriptIcon = () => (
+  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+    <path d="M8 9h8M8 13h5"/>
+  </svg>
+)
 
-function AudioWaveform({ active }) {
-  return (
-    <div className={`flex items-center gap-0.5 h-10 transition-all duration-300 ${active ? 'opacity-100 scale-100' : 'opacity-0 scale-75'}`}>
-      {WAVEFORM_HEIGHTS.map((h, i) => (
-        <div key={i} style={{
-          width: '3px', height: '40px',
-          background: 'linear-gradient(180deg, #f87171, #fb923c)',
-          borderRadius: '3px', transformOrigin: 'center',
-          animation: active ? `waveBar ${WAVEFORM_DURATIONS[i]}s ease-in-out ${i * 0.05}s infinite` : 'none',
-          transform: active ? undefined : `scaleY(${h * 0.2})`,
-        }} />
-      ))}
-    </div>
-  )
-}
+const EndIcon = () => (
+  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+    <path d="M3.5 14.5c4.7-4.2 12.3-4.2 17 0l-1.9 2.4a1 1 0 0 1-1.3.2l-2.4-1.5a1 1 0 0 1-.5-.9V12.8a12 12 0 0 0-4.8 0v1.9a1 1 0 0 1-.5.9l-2.4 1.5a1 1 0 0 1-1.3-.2z"/>
+  </svg>
+)
+
+const WAVEFORM_DURATIONS = [0.45, 0.38, 0.52, 0.40, 0.48, 0.35, 0.50, 0.42, 0.55, 0.38, 0.45, 0.41, 0.49]
 
 function CountdownRing({ seconds, total = 90, visible }) {
   const r = 44, circ = 2 * Math.PI * r
@@ -59,46 +56,212 @@ function CountdownRing({ seconds, total = 90, visible }) {
   )
 }
 
-function VideoAvatar({ status, compact = false }) {
-  const isSpeaking = status === 'speaking'
+const TALK_BARS = [0, 1, 2, 3, 4]
+
+// Small animated bars on a video tile while that person is talking
+function TalkingBars({ color }) {
+  return (
+    <span className="flex items-center gap-0.5 h-3.5">
+      {TALK_BARS.map(i => (
+        <span key={i} style={{
+          width: 3, height: 14, background: color, borderRadius: 2,
+          animation: `waveBar ${WAVEFORM_DURATIONS[i]}s ease-in-out ${i * 0.07}s infinite`,
+        }} />
+      ))}
+    </span>
+  )
+}
+
+const TILE_LABEL = 'absolute bottom-2.5 left-2.5 sm:bottom-3 sm:left-3 flex items-center gap-2 bg-black/55 backdrop-blur-sm rounded-full px-2.5 sm:px-3 py-1 text-white text-[11px] sm:text-xs font-semibold'
+
+// ── Interviewer "video" tile ─────────────────────────────────────────────────
+// Three stacked layers, cross-faded by status:
+//   idle (waiting for you) → a still frame, so the interviewer is not moving
+//   you are answering / the interviewer is thinking → "listening" loop (nods, blinks)
+//   the interviewer is speaking → "talking" loop
+// Both loops start on a frame that matches the still, and each restarts from
+// there, so going from still to video has no jump.
+// Missing files fall back to the photo, and then to the initial.
+const FADE_MS = 350
+
+function InterviewerTile({ interviewer, status }) {
+  const speaking  = status === 'speaking'
+  const listening = status === 'listening' || status === 'thinking'
+  const [stillSrc,    setStillSrc]    = useState(interviewer.idle || interviewer.photo)
+  const [listeningOk, setListeningOk] = useState(true)
+  const [talkingOk,   setTalkingOk]   = useState(true)
+  const listeningRef = useRef(null)
+  const talkingRef   = useRef(null)
+
+  // Listening loop: start from its first frame (= the still); rewind after it fades out
+  useEffect(() => {
+    const v = listeningRef.current
+    if (!v) return
+    if (listening) {
+      v.currentTime = 0
+      v.play().catch(() => {})
+      return
+    }
+    const t = setTimeout(() => { v.pause(); v.currentTime = 0 }, FADE_MS)
+    return () => clearTimeout(t)
+  }, [listening])
+
+  // Talking loop: every phrase starts from its first frame (= the still); rewind after it fades out
+  useEffect(() => {
+    const v = talkingRef.current
+    if (!v) return
+    if (speaking) {
+      v.currentTime = 0
+      v.play().catch(() => {})
+      return
+    }
+    const t = setTimeout(() => { v.pause(); v.currentTime = 0 }, FADE_MS)
+    return () => clearTimeout(t)
+  }, [speaking])
+
+  const state =
+    status === 'thinking'  ? { text: 'Thinking…',       cls: 'text-yellow-300' } :
+    status === 'listening' ? { text: 'Listening',       cls: 'text-slate-200'  } :
+                             { text: 'Waiting for you', cls: 'text-slate-300'  }
+  const media = 'absolute inset-0 w-full h-full object-cover transition-opacity ease-in-out'
+  const fade  = { transitionDuration: `${FADE_MS}ms` }
 
   return (
-    <div className={`flex ${compact ? 'flex-row items-center gap-3' : 'flex-col items-center gap-4'}`}>
-      <div className="relative">
-        {isSpeaking && !compact && (
-          <>
-            <span className="absolute inset-0 rounded-full bg-emerald-400/15 animate-ping" style={{ animationDuration: '1.5s' }} />
-            <span className="absolute -inset-2 rounded-full border border-emerald-400/20 animate-ping" style={{ animationDuration: '2s' }} />
-          </>
-        )}
-        {isSpeaking && compact && (
-          <span className="absolute inset-0 rounded-full bg-emerald-400/20 animate-ping" style={{ animationDuration: '1.5s' }} />
-        )}
-        <div className={`relative rounded-full overflow-hidden transition-all duration-500 ${compact ? 'w-12 h-12' : 'w-28 h-28'} ${
-          isSpeaking ? 'ring-2 ring-emerald-400 shadow-lg shadow-emerald-500/40' : 'ring-2 ring-slate-700/60'
-        }`}>
-          <div className="w-full h-full bg-gradient-to-br from-emerald-400 via-teal-400 to-cyan-500 flex items-center justify-center relative">
-            <span className={`font-black text-slate-900 select-none ${compact ? 'text-lg' : 'text-3xl'}`}>A</span>
-            <img src="/alex-avatar.jpg" alt="Alex"
-              className="absolute inset-0 w-full h-full object-cover object-top"
-              onError={(e) => { e.target.style.display = 'none' }} />
-          </div>
-        </div>
+    <div
+      className={`relative w-full aspect-video rounded-2xl sm:rounded-3xl overflow-hidden transition-all duration-300 ${
+        speaking ? 'ring-4 ring-emerald-400/80 shadow-xl shadow-emerald-500/25' : 'ring-1 ring-slate-300 dark:ring-slate-700/60'
+      }`}
+      style={{ background: interviewer.background }}
+    >
+      <span className="absolute inset-0 flex items-center justify-center text-6xl font-black text-white/70 select-none">
+        {interviewer.name[0]}
+      </span>
+      {stillSrc && (
+        <img src={stillSrc} alt={interviewer.name} className={media} style={fade}
+          onError={() => setStillSrc(s => (s === interviewer.idle ? interviewer.photo : null))} />
+      )}
+      {listeningOk && (
+        <video ref={listeningRef} src={interviewer.listening} className={`${media} ${listening ? 'opacity-100' : 'opacity-0'}`} style={fade}
+          loop muted playsInline preload="auto" onError={() => setListeningOk(false)} />
+      )}
+      {talkingOk && (
+        <video ref={talkingRef} src={interviewer.talking} className={`${media} ${speaking ? 'opacity-100' : 'opacity-0'}`} style={fade}
+          loop muted playsInline preload="auto" onError={() => setTalkingOk(false)} />
+      )}
+      <div className={TILE_LABEL}>
+        <span>{interviewer.name} · Interviewer</span>
+        {speaking
+          ? <TalkingBars color="#34d399" />
+          : <span className={`font-medium ${state.cls}`}>{state.text}</span>}
       </div>
-      <div className={compact ? '' : 'text-center'}>
-        <p className={`text-slate-900 dark:text-white font-bold tracking-wide ${compact ? 'text-xs' : 'text-sm'}`}>Alex — Interviewer</p>
-        <div className={`flex items-center gap-1.5 mt-0.5 text-xs font-medium transition-colors duration-300 ${compact ? '' : 'justify-center'} ${
-          status === 'speaking'  ? 'text-emerald-400' :
-          status === 'listening' ? 'text-red-400'     :
-          status === 'thinking'  ? 'text-yellow-400'  : 'text-slate-500'
-        }`}>
-          <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
-          {status === 'speaking' ? 'Speaking...' : status === 'listening' ? 'Listening...' : status === 'thinking' ? 'Thinking...' : 'Ready'}
+    </div>
+  )
+}
+
+// ── "End interview?" confirmation ────────────────────────────────────────────
+function EndInterviewDialog({ answered, total, onFeedback, onLeave, onCancel }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onCancel() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onCancel])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(2,6,23,0.75)', backdropFilter: 'blur(8px)' }} onClick={onCancel}>
+      <div className="w-full max-w-sm glass bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700/50 rounded-3xl p-6 shadow-2xl animate-fade-up"
+        style={{ animationDuration: '0.2s' }} onClick={(e) => e.stopPropagation()}>
+        <p className="text-slate-900 dark:text-white font-bold text-lg">End the interview?</p>
+        <p className="text-slate-600 dark:text-slate-400 text-sm mt-1 mb-5">
+          You have answered {answered} of {total} {total === 1 ? 'question' : 'questions'}.
+        </p>
+        <div className="space-y-2">
+          {answered > 0 && (
+            <button onClick={onFeedback}
+              className="w-full py-3 rounded-2xl text-sm font-bold text-white bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 transition-all">
+              End and get feedback
+            </button>
+          )}
+          <button onClick={onLeave}
+            className="w-full py-3 rounded-2xl text-sm font-bold text-red-500 dark:text-red-400 border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 transition-all">
+            Leave without feedback
+          </button>
+          <button onClick={onCancel}
+            className="w-full py-3 rounded-2xl text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-all">
+            Continue the interview
+          </button>
         </div>
       </div>
     </div>
   )
 }
+
+// ── You: webcam tile (or a placeholder while the camera is off) ──────────────
+const YouTile = forwardRef(function YouTile({ stream, metrics, listening, onTurnOnCamera, className = '' }, ref) {
+  useEffect(() => {
+    if (ref.current && stream) ref.current.srcObject = stream
+  }, [stream, ref])
+
+  const ready = metrics?.samplesCount > 10
+  const eyeColor = !ready ? '' :
+    metrics.eyeContactPct >= 70 ? 'bg-emerald-600/80' :
+    metrics.eyeContactPct >= 40 ? 'bg-amber-500/80'   : 'bg-red-500/80'
+  const headColor = !ready ? '' :
+    metrics.headStabilityPct >= 70 ? 'bg-emerald-600/80' :
+    metrics.headStabilityPct >= 40 ? 'bg-amber-500/80'   : 'bg-red-500/80'
+  const headLabel = !ready ? null :
+    metrics.headStabilityPct >= 70 ? 'Upright' :
+    metrics.headStabilityPct >= 40 ? 'Drifting' : 'Posture'
+  const exprMeta = !ready ? null :
+    metrics.expression === 'smiling'  ? { label: 'Smiling',  color: 'bg-yellow-500/80', icon: '😊' } :
+    metrics.expression === 'serious'  ? { label: 'Serious',  color: 'bg-slate-600/80',  icon: '😐' } :
+                                        { label: 'Neutral',  color: 'bg-slate-500/80',  icon: '🙂' }
+  const badge = 'text-white text-[10px] sm:text-xs font-bold px-2 py-0.5 rounded-full backdrop-blur-sm'
+
+  return (
+    <div className={`relative aspect-video rounded-xl sm:rounded-3xl overflow-hidden bg-slate-200 dark:bg-slate-800 transition-all duration-300 ${
+      listening ? 'ring-4 ring-red-400/80 shadow-xl shadow-red-500/25' : 'ring-1 ring-slate-300 dark:ring-slate-700/60'
+    } ${className}`}>
+      {stream ? (
+        <>
+          <video ref={ref} autoPlay muted playsInline className="w-full h-full object-cover scale-x-[-1]" />
+          {exprMeta && (
+            <span className={`absolute top-2.5 right-2.5 hidden sm:inline ${exprMeta.color} ${badge}`}>
+              {exprMeta.icon} {exprMeta.label}
+            </span>
+          )}
+          {ready && (
+            <div className="absolute top-2.5 left-2.5 hidden sm:flex gap-1">
+              <span className={`${eyeColor} ${badge}`}>👁 {metrics.eyeContactPct}%</span>
+              {headLabel && <span className={`${headColor} ${badge}`}>{headLabel}</span>}
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 sm:gap-3 p-2">
+          <button
+            onClick={onTurnOnCamera}
+            title="Turn on camera"
+            className="w-10 h-10 sm:w-14 sm:h-14 rounded-full bg-slate-300 dark:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center hover:bg-emerald-500 hover:text-white transition-all"
+          >
+            <CameraIcon on={false} />
+          </button>
+          <p className="hidden sm:block text-slate-600 dark:text-slate-400 text-sm font-medium">Your camera is off</p>
+          <button
+            onClick={onTurnOnCamera}
+            className="hidden sm:block text-emerald-600 dark:text-emerald-400 text-xs font-semibold hover:underline"
+          >
+            Turn on camera
+          </button>
+        </div>
+      )}
+      <div className={`${TILE_LABEL} ${stream ? '' : 'hidden sm:flex'}`}>
+        <span>You</span>
+        {listening && <TalkingBars color="#f87171" />}
+      </div>
+    </div>
+  )
+})
 
 function HintCard({ hints, analytics, questionIndex }) {
   const [open, setOpen] = useState(true)
@@ -106,8 +269,8 @@ function HintCard({ hints, analytics, questionIndex }) {
   const isBehavioral = questionIndex <= 1
   const iconMap = { warning: '⚠️', info: '💡', star: '⭐' }
   return (
-    <div className="flex justify-center my-1">
-      <div className="w-full max-w-[88%] glass-light border border-amber-500/25 rounded-2xl overflow-hidden">
+    <div>
+      <div className="w-full glass-light border border-amber-500/25 rounded-2xl overflow-hidden">
         <button onClick={() => setOpen(o => !o)}
           className="w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-white/5 transition">
           <div className="flex items-center gap-2">
@@ -137,75 +300,22 @@ function HintCard({ hints, analytics, questionIndex }) {
   )
 }
 
-// ── Webcam PiP ───────────────────────────────────────────────────────────────
-const WebcamPiP = forwardRef(function WebcamPiP({ stream, metrics }, ref) {
-  useEffect(() => {
-    if (ref.current && stream) ref.current.srcObject = stream
-  }, [stream, ref])
-  if (!stream) return null
-
-  const ready = metrics?.samplesCount > 10
-  const eyeColor = !ready ? '' :
-    metrics.eyeContactPct >= 70 ? 'bg-emerald-600/80' :
-    metrics.eyeContactPct >= 40 ? 'bg-amber-500/80'   : 'bg-red-500/80'
-  const headColor = !ready ? '' :
-    metrics.headStabilityPct >= 70 ? 'bg-emerald-600/80' :
-    metrics.headStabilityPct >= 40 ? 'bg-amber-500/80'   : 'bg-red-500/80'
-  const headLabel = !ready ? null :
-    metrics.headStabilityPct >= 70 ? 'Upright' :
-    metrics.headStabilityPct >= 40 ? 'Drifting' : 'Posture'
-  const exprMeta = !ready ? null :
-    metrics.expression === 'smiling'  ? { label: 'Smiling',  color: 'bg-yellow-500/80', icon: '😊' } :
-    metrics.expression === 'serious'  ? { label: 'Serious',  color: 'bg-slate-600/80',  icon: '😐' } :
-                                        { label: 'Neutral',  color: 'bg-slate-500/80',  icon: '🙂' }
-
-  return (
-    <div className="w-full rounded-2xl overflow-hidden border border-emerald-500/30 shadow-lg relative"
-      style={{ aspectRatio: '4/3' }}>
-      <video ref={ref} autoPlay muted playsInline className="w-full h-full object-cover scale-x-[-1]" />
-      <div className="absolute top-1.5 left-1.5 flex items-center gap-1 bg-black/50 rounded-full px-1.5 py-0.5">
-        <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
-        <span className="text-white text-[9px] font-medium">YOU</span>
-      </div>
-      {exprMeta && (
-        <div className="absolute top-1.5 right-1.5">
-          <span className={`${exprMeta.color} text-white text-[9px] font-bold px-2 py-0.5 rounded-full backdrop-blur-sm`}>
-            {exprMeta.icon} {exprMeta.label}
-          </span>
-        </div>
-      )}
-      {ready && (
-        <div className="absolute bottom-1.5 left-1.5 right-1.5 flex gap-1 flex-wrap">
-          <span className={`${eyeColor} text-white text-[9px] font-bold px-2 py-0.5 rounded-full backdrop-blur-sm`}>
-            👁 {metrics.eyeContactPct}%
-          </span>
-          {headLabel && (
-            <span className={`${headColor} text-white text-[9px] font-bold px-2 py-0.5 rounded-full backdrop-blur-sm`}>
-              {headLabel}
-            </span>
-          )}
-        </div>
-      )}
-    </div>
-  )
-})
-
 // ── Transcript slide-in panel ────────────────────────────────────────────────
-function TranscriptPanel({ log, onClose }) {
+function TranscriptPanel({ log, interviewerName, onClose }) {
   return (
-    <div className="fixed inset-y-0 inset-x-0 sm:inset-x-auto sm:right-0 z-40 sm:w-80 glass border-l border-slate-700/50 flex flex-col shadow-2xl animate-fade-up"
+    <div className="fixed inset-y-0 inset-x-0 sm:inset-x-auto sm:right-0 z-40 sm:w-96 glass bg-white/95 dark:bg-slate-950/95 border-l border-slate-200 dark:border-slate-700/50 flex flex-col shadow-2xl animate-fade-up"
       style={{ animationDuration: '0.25s' }}>
-      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700/40">
-        <span className="text-white font-bold text-sm">📝 Full Transcript</span>
-        <button onClick={onClose} className="text-slate-500 hover:text-slate-300 transition text-lg leading-none">✕</button>
+      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-700/40">
+        <span className="text-slate-900 dark:text-white font-bold text-sm">📝 Full conversation</span>
+        <button onClick={onClose} className="text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition text-lg leading-none">✕</button>
       </div>
       <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3 text-sm">
         {log.filter(m => m.role !== 'coach').map((msg, i) => (
           <div key={i}>
             <p className={`text-xs font-bold uppercase tracking-widest mb-1 ${msg.role === 'assistant' ? 'text-emerald-400/70' : 'text-slate-500'}`}>
-              {msg.role === 'assistant' ? 'Alex' : 'You'}
+              {msg.role === 'assistant' ? interviewerName : 'You'}
             </p>
-            <p className="text-slate-300 leading-relaxed">{msg.content}</p>
+            <p className="text-slate-700 dark:text-slate-300 leading-relaxed">{msg.content}</p>
           </div>
         ))}
         {log.filter(m => m.role !== 'coach').length === 0 && (
@@ -221,8 +331,9 @@ function fmtTime(s) {
   return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
 }
 
-export default function Interview({ sessionData, onComplete }) {
+export default function Interview({ sessionData, onComplete, onExit }) {
   const { role, questions, question_plan, intro_message, cv_summary, difficulty = 'Mid', language = 'en-US' } = sessionData
+  const interviewer = getInterviewer(sessionData.interviewer)
 
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [history,         setHistory]        = useState([])
@@ -238,6 +349,7 @@ export default function Interview({ sessionData, onComplete }) {
   const [showTranscript,  setShowTranscript]  = useState(false)
   const [webcamStream,    setWebcamStream]    = useState(null)
   const [webcamError,     setWebcamError]     = useState('')
+  const [showEndDialog,   setShowEndDialog]   = useState(false)
 
   const conversationEndRef   = useRef(null)
   const isHoldingRef         = useRef(false)
@@ -251,6 +363,7 @@ export default function Interview({ sessionData, onComplete }) {
   const webcamVideoRef       = useRef(null)
   const faceMetricsRef       = useRef(null)
   const recordingUrlRef      = useRef(null)
+  const endedRef             = useRef(false)  // set once the user ends the interview early
 
   const faceMetrics = useFaceAnalysis(webcamVideoRef, !!webcamStream)
   faceMetricsRef.current = faceMetrics
@@ -293,7 +406,14 @@ export default function Interview({ sessionData, onComplete }) {
     }
   }
 
-  const { speak, prefetch, cancel: cancelTTS, isSupported: ttsSupported } = useTTS({ language })
+  const { speak, prefetch, cancel: cancelTTS, isSupported: ttsSupported } = useTTS({ language, interviewer: interviewer.id, voice: getVoice(interviewer.id) })
+
+  // The interviewer's lips move only while sound is actually playing, not while the audio is still loading
+  const [audioPlaying, setAudioPlaying] = useState(false)
+  const say = useCallback((text, onEnd) => {
+    setAudioPlaying(false)
+    speak(text, () => { setAudioPlaying(false); onEnd?.() }, () => setAudioPlaying(true))
+  }, [speak])
 
   // Kick off TTS fetch for the intro immediately on first render — before any useEffect fires
   const prefetchedRef = useRef(false)
@@ -303,6 +423,7 @@ export default function Interview({ sessionData, onComplete }) {
   }
 
   const handleFinalTranscript = useCallback(async (transcript) => {
+    if (endedRef.current) return
     if (!transcript.trim()) {
       // STT ended with no speech (no-speech timeout, space pressed too fast, etc.)
       // Must reset status so the mic button becomes usable again.
@@ -339,10 +460,12 @@ export default function Interview({ sessionData, onComplete }) {
           difficulty,
           allow_followup: !followupRef.current,
           language,
+          interviewer: interviewer.id,
         }),
       })
       if (!res.ok) throw new Error('Failed to get response')
       const data = await res.json()
+      if (endedRef.current) return
       const { reply, done, followup } = data
 
       const updatedHistory = [...newHistory, { role: 'assistant', content: reply }]
@@ -362,7 +485,7 @@ export default function Interview({ sessionData, onComplete }) {
           canRecordRef.current = true
         }
         const followupFallback = setTimeout(followupComplete, 12000)
-        speak(reply, () => { clearTimeout(followupFallback); followupComplete() })
+        say(reply, () => { clearTimeout(followupFallback); followupComplete() })
         return
       }
 
@@ -381,7 +504,7 @@ export default function Interview({ sessionData, onComplete }) {
           setTimeout(() => onComplete(updatedPairs, totalDuration, faceMetricsRef.current, recordingUrlRef.current), 800)
         }
         const fallbackTimer = setTimeout(complete, 12000)
-        speak(reply, () => { clearTimeout(fallbackTimer); complete() })
+        say(reply, () => { clearTimeout(fallbackTimer); complete() })
       } else {
         let advanced = false
         const advance = () => {
@@ -392,14 +515,14 @@ export default function Interview({ sessionData, onComplete }) {
           canRecordRef.current = true
         }
         const advanceFallback = setTimeout(advance, 12000)
-        speak(reply, () => { clearTimeout(advanceFallback); advance() })
+        say(reply, () => { clearTimeout(advanceFallback); advance() })
       }
     } catch {
       setError('Something went wrong, please try again.')
       setStatus('idle')
       canRecordRef.current = true
     }
-  }, [history, questions, question_plan, qaPairs, speak, onComplete, role, cv_summary, difficulty, language])
+  }, [history, questions, question_plan, qaPairs, say, onComplete, role, cv_summary, difficulty, language, interviewer.id])
 
   const { start, stop, isListening, interimTranscript, isSupported: sttSupported } = useSTT({
     onFinalTranscript: handleFinalTranscript,
@@ -426,7 +549,7 @@ export default function Interview({ sessionData, onComplete }) {
       setHistory([{ role: 'assistant', content: intro_message }])
       setStatus('speaking')
       canRecordRef.current = false
-      speak(intro_message, () => { setStatus('idle'); canRecordRef.current = true })
+      say(intro_message, () => { setStatus('idle'); canRecordRef.current = true })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -475,10 +598,45 @@ export default function Interview({ sessionData, onComplete }) {
   }
   const handleMicUp = () => { if (isListening) stop() }
 
+  // ── Ending the interview early ──
+  const stopEverything = () => {
+    endedRef.current = true
+    canRecordRef.current = false
+    cancelTTS()
+    setAudioPlaying(false)
+    stop()
+    stopRecording()
+  }
+  const endWithFeedback = () => {
+    stopEverything()
+    setShowEndDialog(false)
+    const totalDuration = Math.round((Date.now() - sessionStartRef.current) / 1000)
+    // Give the recorder a moment to produce the recording URL, as on a normal finish
+    setTimeout(() => onComplete(qaPairs, totalDuration, faceMetricsRef.current, recordingUrlRef.current), 800)
+  }
+  const leaveInterview = () => {
+    stopEverything()
+    onExit?.()
+  }
+
   const micDisabled = status !== 'idle' || !sttSupported
+  // While the reply audio is still loading, the interviewer keeps listening (or stays still before the first answer)
+  const tileStatus = status === 'speaking' && !audioPlaying
+    ? (conversationLog.some(m => m.role === 'user') ? 'thinking' : 'idle')
+    : status
   const isSpeaking  = status === 'speaking'
   const isThinking  = status === 'thinking'
   const progressPct = Math.round((currentQuestionIndex / questions.length) * 100)
+
+  // Captions: the interviewer's latest line, your answer to it, and the latest coach tips
+  const lastInterviewerIdx = conversationLog.map(m => m.role).lastIndexOf('assistant')
+  const lastLine    = lastInterviewerIdx >= 0 ? conversationLog[lastInterviewerIdx] : null
+  const yourAnswer  = conversationLog.slice(lastInterviewerIdx + 1).find(m => m.role === 'user')
+  const coachIdx    = conversationLog.map(m => m.role).lastIndexOf('coach')
+  const lastCoach   = coachIdx >= 0 ? conversationLog[coachIdx] : null
+  const yourLine    = interimTranscript || yourAnswer?.content
+
+  const roundBtn = 'w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition-all duration-200 border'
 
   return (
     <div className="h-screen dark:bg-slate-950 flex flex-col overflow-hidden relative">
@@ -490,35 +648,36 @@ export default function Interview({ sessionData, onComplete }) {
 
       {/* ── Header ── */}
       <header className="relative z-10 glass border-b border-slate-200 dark:border-slate-700/50 px-4 py-3 flex flex-col gap-2">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           {/* Left: logo + meta */}
-          <div className="flex items-center gap-3">
-            <span className="font-black text-lg">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="font-black text-lg flex-shrink-0">
               <span className="text-slate-900 dark:text-white">Mock</span><span className="gradient-text">Mate</span>
             </span>
             <span className="hidden sm:block text-slate-500 dark:text-slate-600 text-xs border border-slate-200 dark:border-slate-700/60 rounded-full px-2 py-0.5">{difficulty}</span>
-            <span className="hidden sm:block text-slate-600 dark:text-slate-400 text-sm truncate max-w-[180px]">— {role}</span>
+            <span className="hidden sm:block text-slate-600 dark:text-slate-400 text-sm truncate max-w-[260px]">— {role}</span>
           </div>
 
-          {/* Right: timer + controls + Q counter */}
-          <div className="flex items-center gap-2">
-            {/* Elapsed timer */}
-            <div className="hidden sm:flex items-center gap-1.5 text-slate-600 dark:text-slate-500 text-xs font-mono bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/40 rounded-full px-2.5 py-1">
+          {/* Right: question progress + timer */}
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="text-slate-600 dark:text-slate-400 text-xs font-semibold">
+                Q{Math.min(currentQuestionIndex + 1, questions.length)}/{questions.length}
+              </span>
+              <div className="hidden sm:flex gap-1.5">
+                {questions.map((_, i) => (
+                  <div key={i} className={`rounded-full transition-all duration-500 ${
+                    i < currentQuestionIndex   ? 'w-2 h-2 bg-emerald-400' :
+                    i === currentQuestionIndex ? 'w-2.5 h-2.5 bg-emerald-400 ring-2 ring-emerald-400/30' :
+                    'w-2 h-2 bg-slate-300 dark:bg-slate-700'
+                  }`} />
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-500 text-xs font-mono bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/40 rounded-full px-2.5 py-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
               {fmtTime(elapsedSeconds)}
             </div>
-
-            {/* Transcript toggle */}
-            <button
-              onClick={() => setShowTranscript(o => !o)}
-              title="View full transcript"
-              className={`p-1.5 rounded-full text-sm transition-all border ${
-                showTranscript ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' : 'glass-light border-slate-700/40 text-slate-500 hover:text-slate-300'
-              }`}
-            >
-              📝
-            </button>
-
           </div>
         </div>
 
@@ -538,153 +697,152 @@ export default function Interview({ sessionData, onComplete }) {
         </div>
       )}
 
-      <div className="flex-1 flex flex-col lg:flex-row gap-0 overflow-hidden relative z-10">
-        {/* ── Left panel ── */}
-        <div className="lg:w-72 glass-light border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-700/40
-          flex flex-row lg:flex-col items-center justify-between lg:justify-center
-          py-3 px-4 lg:py-8 lg:px-6 gap-3 lg:gap-6">
-
-          {/* Avatar + webcam feed */}
-          <div className="flex-shrink-0 flex flex-col items-center gap-3">
-            <div className="block lg:hidden"><VideoAvatar status={status} compact /></div>
-            <div className="hidden lg:block"><VideoAvatar status={status} /></div>
-            {/* Webcam below Alex — desktop only */}
-            <div className="hidden lg:block w-full px-1">
-              <WebcamPiP ref={webcamVideoRef} stream={webcamStream} metrics={faceMetrics} />
-            </div>
-          </div>
-
-          {/* Middle section */}
-          <div className="flex-1 lg:flex-none flex flex-col lg:items-center gap-1.5 lg:gap-0">
-            {isThinking && (
-              <div className="flex items-center gap-2 text-yellow-400 text-xs lg:text-sm lg:mb-0">
-                <div className="flex gap-1">
-                  {[0,1,2].map(i => (
-                    <span key={i} className="w-1.5 h-1.5 rounded-full bg-yellow-400"
-                      style={{ animation: `pulse 1s ease-in-out ${i * 0.2}s infinite` }} />
-                  ))}
-                </div>
-                Thinking...
-              </div>
-            )}
-            {/* Question progress dots */}
-            <div className="flex gap-1.5 lg:gap-2.5 lg:mt-0">
-              {questions.map((_, i) => (
-                <div key={i} className={`rounded-full transition-all duration-500 ${
-                  i < currentQuestionIndex  ? 'w-2 h-2 lg:w-2.5 lg:h-2.5 bg-emerald-400 shadow-sm shadow-emerald-500/50' :
-                  i === currentQuestionIndex ? 'w-2.5 h-2.5 lg:w-3 lg:h-3 bg-emerald-400 ring-2 ring-emerald-400/30 shadow-md shadow-emerald-500/50' :
-                  'w-2 h-2 lg:w-2.5 lg:h-2.5 bg-slate-300 dark:bg-slate-700'
-                }`} />
-              ))}
-            </div>
-            {/* Elapsed time (mobile only) */}
-            <div className="lg:hidden flex items-center gap-1.5 text-slate-500 text-xs font-mono">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              {fmtTime(elapsedSeconds)}
-            </div>
-          </div>
-
-          {/* Live Coach label — desktop only */}
-          <div className="hidden lg:block text-center space-y-1 px-2">
-            <p className="text-slate-600 dark:text-slate-500 text-xs font-semibold uppercase tracking-widest">Live Coach</p>
-            <p className="text-slate-600 dark:text-slate-600 text-xs leading-relaxed">Instant feedback appears after each answer</p>
+      <div className="flex-1 flex flex-col overflow-hidden relative z-10">
+        {/* ── Video tiles: the interviewer and you, side by side like a video call ── */}
+        {/* Width is capped by screen height so both tiles and the captions fit */}
+        <div className="w-full mx-auto px-3 sm:px-6 pt-3 sm:pt-5" style={{ maxWidth: 'min(72rem, calc(150vh - 6rem))' }}>
+          <div className="relative grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+            <InterviewerTile interviewer={interviewer} status={tileStatus} />
+            {/* On phones your tile floats in the corner of the interviewer's tile */}
+            <YouTile
+              ref={webcamVideoRef}
+              stream={webcamStream}
+              metrics={faceMetrics}
+              listening={isListening}
+              onTurnOnCamera={toggleWebcam}
+              className="!absolute top-2.5 right-2.5 w-[34%] z-10 shadow-lg sm:!relative sm:top-auto sm:right-auto sm:w-full sm:shadow-none"
+            />
           </div>
         </div>
 
-        {/* ── Right panel ── */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Chat */}
-          <div className="flex-1 overflow-y-auto px-6 py-6 space-y-3">
-            {conversationLog.map((msg, i) => {
-              if (msg.role === 'coach') return <HintCard key={i} hints={msg.hints} analytics={msg.analytics} questionIndex={msg.questionIndex} />
-              return (
-                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-up`}
-                  style={{ animationDuration: '0.3s' }}>
-                  <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                    msg.role === 'user'
-                      ? 'bg-gradient-to-br from-emerald-500/25 to-teal-500/20 text-emerald-100 border border-emerald-500/25'
-                      : 'glass-light text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700/40'
-                  }`}>
-                    {msg.role === 'assistant' && <p className="text-xs text-emerald-400/70 mb-1 font-bold tracking-wide">ALEX</p>}
-                    {msg.content}
-                  </div>
-                </div>
-              )
-            })}
-
-            {interimTranscript && (
-              <div className="flex justify-end animate-fade-up">
-                <div className="max-w-[80%] rounded-2xl px-4 py-3 text-sm bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 italic">
-                  {interimTranscript}
-                  <span className="inline-block w-0.5 h-4 bg-emerald-400 ml-1 animate-pulse align-middle" />
-                </div>
+        {/* ── Captions ── */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="w-full mx-auto px-3 sm:px-6 py-3 sm:py-4 space-y-2.5" style={{ maxWidth: 'min(72rem, calc(150vh - 6rem))' }}>
+            {lastLine && (
+              <div key={lastInterviewerIdx} className="glass-light border border-slate-200 dark:border-slate-700/40 rounded-2xl px-4 sm:px-5 py-3 animate-fade-up" style={{ animationDuration: '0.3s' }}>
+                <p className="text-xs text-emerald-500 dark:text-emerald-400/80 mb-1 font-bold tracking-widest">{interviewer.name.toUpperCase()}</p>
+                <p className="text-slate-800 dark:text-slate-100 text-base sm:text-lg leading-relaxed font-medium">{lastLine.content}</p>
               </div>
+            )}
+
+            {yourLine && (
+              <div className="rounded-2xl px-4 sm:px-5 py-3 bg-emerald-500/10 border border-emerald-500/25 animate-fade-up" style={{ animationDuration: '0.3s' }}>
+                <p className="text-xs text-slate-500 mb-1 font-bold tracking-widest">YOU</p>
+                <p className={`text-sm sm:text-base leading-relaxed ${interimTranscript ? 'italic text-emerald-700 dark:text-emerald-300' : 'text-slate-700 dark:text-slate-200'}`}>
+                  {yourLine}
+                  {interimTranscript && <span className="inline-block w-0.5 h-4 bg-emerald-400 ml-1 animate-pulse align-middle" />}
+                </p>
+              </div>
+            )}
+
+            {lastCoach && !isListening && (
+              <HintCard key={coachIdx} hints={lastCoach.hints} analytics={lastCoach.analytics} questionIndex={lastCoach.questionIndex} />
+            )}
+
+            {conversationLog.length > 1 && (
+              <button
+                onClick={() => setShowTranscript(true)}
+                className="text-xs font-semibold text-slate-500 hover:text-emerald-500 transition-colors"
+              >
+                📝 Show the full conversation
+              </button>
             )}
             <div ref={conversationEndRef} />
           </div>
+        </div>
 
-          {/* ── Bottom controls ── */}
-          <div className="border-t border-slate-200 dark:border-slate-700/40 glass px-4 sm:px-6 py-4 sm:py-5">
-            {error && (
-              <div className="mb-3 bg-red-500/10 border border-red-500/25 rounded-2xl px-4 py-2 text-red-400 text-sm text-center">
-                {error}
-                <button onClick={() => setError('')} className="ml-2 underline text-xs opacity-70">Dismiss</button>
-              </div>
-            )}
-            <div className="flex flex-col items-center gap-2 sm:gap-3">
-              <AudioWaveform active={isListening} />
-
-              {/* Mic + Camera row */}
-              <div className="flex items-center gap-4 sm:gap-5">
-                {/* Camera — small minimal button */}
-                <button
-                  onClick={toggleWebcam}
-                  title={webcamStream ? 'Turn off camera' : 'Turn on camera'}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 border ${
-                    webcamStream
-                      ? 'bg-blue-500/15 border-blue-500/35 text-blue-400'
-                      : 'bg-slate-100 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/50 text-slate-500 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-500'
-                  }`}
-                >
-                  <CameraIcon on={!!webcamStream} />
-                </button>
-
-                {/* Mic — primary action */}
-                <div className="relative w-14 h-14 sm:w-16 sm:h-16 flex items-center justify-center">
-                  <CountdownRing seconds={countdown} total={90} visible={isListening} />
-                  <button
-                    onMouseDown={handleMicDown} onMouseUp={handleMicUp}
-                    onTouchStart={(e) => { e.preventDefault(); handleMicDown() }}
-                    onTouchEnd={(e)   => { e.preventDefault(); handleMicUp()   }}
-                    disabled={micDisabled}
-                    className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition-all duration-200 select-none z-10 ${
-                      isListening
-                        ? 'bg-gradient-to-br from-red-500 to-rose-600 text-white btn-recording scale-105'
-                        : isSpeaking || isThinking
-                        ? 'bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/50 text-slate-400 dark:text-slate-600 cursor-not-allowed'
-                        : 'bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/30 hover:scale-105'
-                    }`}
-                  >
-                    <MicIcon />
-                  </button>
-                </div>
-              </div>
-
-              <p className={`text-xs font-semibold tracking-wide transition-colors duration-300 text-center ${
-                isListening ? 'text-red-400' : isSpeaking ? 'text-slate-600' : isThinking ? 'text-yellow-400' : 'text-slate-500'
-              }`}>
-                {isListening ? `${countdown}s remaining — press Space to send` :
-                 isSpeaking  ? 'Alex is speaking...' :
-                 isThinking  ? 'Processing your answer...' :
-                 'Hold mic · or Space to start / stop'}
-              </p>
+        {/* ── Control bar ── */}
+        <div className="px-4 pb-4 pt-1 flex flex-col items-center gap-2">
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/25 rounded-2xl px-4 py-2 text-red-400 text-sm text-center">
+              {error}
+              <button onClick={() => setError('')} className="ml-2 underline text-xs opacity-70">Dismiss</button>
             </div>
+          )}
+
+          <p className={`text-xs font-semibold tracking-wide transition-colors duration-300 text-center ${
+            isListening ? 'text-red-400' : isSpeaking ? 'text-slate-500' : isThinking ? 'text-yellow-500' : 'text-slate-500'
+          }`}>
+            {isListening ? `${countdown}s remaining — release the mic or press Space to send` :
+             isSpeaking  ? `${interviewer.name} is speaking…` :
+             isThinking  ? 'Processing your answer…' :
+             'Hold the mic to answer · or press Space to start / stop'}
+          </p>
+
+          <div className="glass border border-slate-200 dark:border-slate-700/50 rounded-full px-3 sm:px-4 py-2 flex items-center gap-3 sm:gap-4 shadow-xl">
+            {/* Camera */}
+            <button
+              onClick={toggleWebcam}
+              title={webcamStream ? 'Turn off camera' : 'Turn on camera'}
+              className={`${roundBtn} ${
+                webcamStream
+                  ? 'bg-blue-500/15 border-blue-500/35 text-blue-500 dark:text-blue-400'
+                  : 'bg-red-500/10 border-red-500/30 text-red-500 dark:text-red-400 hover:bg-red-500/20'
+              }`}
+            >
+              <CameraIcon on={!!webcamStream} />
+            </button>
+
+            {/* Mic — primary action */}
+            <div className="relative w-16 h-16 sm:w-[72px] sm:h-[72px] flex items-center justify-center">
+              <CountdownRing seconds={countdown} total={90} visible={isListening} />
+              <button
+                onMouseDown={handleMicDown} onMouseUp={handleMicUp}
+                onTouchStart={(e) => { e.preventDefault(); handleMicDown() }}
+                onTouchEnd={(e)   => { e.preventDefault(); handleMicUp()   }}
+                disabled={micDisabled}
+                title="Hold to answer"
+                className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-all duration-200 select-none z-10 ${
+                  isListening
+                    ? 'bg-gradient-to-br from-red-500 to-rose-600 text-white btn-recording scale-105'
+                    : isSpeaking || isThinking
+                    ? 'bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/50 text-slate-400 dark:text-slate-600 cursor-not-allowed'
+                    : 'bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/30 hover:scale-105'
+                }`}
+              >
+                <MicIcon />
+              </button>
+            </div>
+
+            {/* Full conversation */}
+            <button
+              onClick={() => setShowTranscript(o => !o)}
+              title="Show the full conversation"
+              className={`${roundBtn} ${
+                showTranscript
+                  ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-500 dark:text-emerald-400'
+                  : 'bg-slate-100 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/50 text-slate-500 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-500'
+              }`}
+            >
+              <TranscriptIcon />
+            </button>
+
+            {/* End the interview */}
+            <span className="w-px h-8 bg-slate-200 dark:bg-slate-700/60" />
+            <button
+              onClick={() => setShowEndDialog(true)}
+              title="End the interview"
+              className="h-11 sm:h-12 px-4 rounded-full flex items-center gap-2 bg-red-500 hover:bg-red-600 text-white text-sm font-bold transition-all shadow-md shadow-red-500/25"
+            >
+              <EndIcon />
+              <span className="hidden sm:inline">End</span>
+            </button>
           </div>
         </div>
       </div>
 
       {/* Transcript panel */}
-      {showTranscript && <TranscriptPanel log={conversationLog} onClose={() => setShowTranscript(false)} />}
+      {showTranscript && <TranscriptPanel log={conversationLog} interviewerName={interviewer.name} onClose={() => setShowTranscript(false)} />}
+
+      {showEndDialog && (
+        <EndInterviewDialog
+          answered={qaPairs.length}
+          total={questions.length}
+          onFeedback={endWithFeedback}
+          onLeave={leaveInterview}
+          onCancel={() => setShowEndDialog(false)}
+        />
+      )}
     </div>
   )
 }

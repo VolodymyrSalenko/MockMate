@@ -145,6 +145,37 @@ def questions_phrase(n: int) -> str:
     return f"{n} question" if n == 1 else f"{n} questions"
 
 
+# ElevenLabs voices the user can choose from; the IDs stay on the server
+VOICES = {
+    "antoni":  "ErXwobaYiN019PkySvjV",
+    "brian":   "nPczCjzI2devNBz1zQrb",
+    "daniel":  "onwK4e9ZLuTAKqWW03F9",
+    "eric":    "cjVigY5qzO86Huf0OWal",
+    "matilda": "XrExE9yKIg1WjnnlVkGX",
+    "sarah":   "EXAVITQu4vr4xnSDxMaL",
+    "alice":   "Xb7hH8MSUJpSbSDYk0k2",
+    "lily":    "pFZP5JQG7iQjIQuC4Bku",
+}
+
+# Interviewers the user can pick; the first voice in the list is the default
+INTERVIEWERS = {
+    "alex": {"name": "Alex", "voices": ["antoni", "brian", "daniel", "eric"]},
+    "emma": {"name": "Emma", "voices": ["matilda", "sarah", "alice", "lily"]},
+}
+DEFAULT_INTERVIEWER = "alex"
+
+
+def get_interviewer(key: Optional[str]) -> dict:
+    return INTERVIEWERS.get((key or "").lower(), INTERVIEWERS[DEFAULT_INTERVIEWER])
+
+
+def get_voice_id(interviewer_key: Optional[str], voice_key: Optional[str]) -> str:
+    """The chosen voice if it belongs to this interviewer, otherwise their default."""
+    allowed = get_interviewer(interviewer_key)["voices"]
+    voice = (voice_key or "").lower()
+    return VOICES[voice if voice in allowed else allowed[0]]
+
+
 class ParseJDRequest(BaseModel):
     jd_text: str = Field(..., max_length=20000)
     cv_text: Optional[str] = Field(None, max_length=20000)
@@ -153,6 +184,7 @@ class ParseJDRequest(BaseModel):
     interview_type: Optional[str] = "full"
     language: Optional[str] = "en-US"
     question_count: int = Field(DEFAULT_QUESTIONS, ge=MIN_QUESTIONS, le=MAX_QUESTIONS)
+    interviewer: Optional[str] = Field(DEFAULT_INTERVIEWER, max_length=20)
 
 
 class QuestionBankRequest(BaseModel):
@@ -160,6 +192,7 @@ class QuestionBankRequest(BaseModel):
     difficulty: Optional[str] = "Mid"
     language: Optional[str] = "en-US"
     question_count: int = Field(DEFAULT_QUESTIONS, ge=MIN_QUESTIONS, le=MAX_QUESTIONS)
+    interviewer: Optional[str] = Field(DEFAULT_INTERVIEWER, max_length=20)
 
 
 class Message(BaseModel):
@@ -192,6 +225,7 @@ class RespondRequest(BaseModel):
     difficulty: Optional[str] = "Mid"
     allow_followup: Optional[bool] = True
     language: Optional[str] = "en-US"
+    interviewer: Optional[str] = Field(DEFAULT_INTERVIEWER, max_length=20)
 
 
 class QAPair(BaseModel):
@@ -341,7 +375,8 @@ async def parse_jd(req: ParseJDRequest, current_user: dict = Depends(get_current
 
     interview_type = req.interview_type or "full"
     n = req.question_count
-    interview_type_context = INTERVIEW_TYPE_PROMPTS.get(interview_type, INTERVIEW_TYPE_PROMPTS["full"]).format(n=n)
+    interviewer_name = get_interviewer(req.interviewer)["name"]
+    interview_type_context =INTERVIEW_TYPE_PROMPTS.get(interview_type, INTERVIEW_TYPE_PROMPTS["full"]).format(n=n)
 
     if req.company_name and req.company_name.strip():
         company_context = (
@@ -361,6 +396,7 @@ async def parse_jd(req: ParseJDRequest, current_user: dict = Depends(get_current
         interview_type_context=interview_type_context,
         question_count=n,
         language_instruction=language_instruction(req.language or "en-US"),
+        interviewer_name=interviewer_name,
     )
 
     try:
@@ -379,7 +415,7 @@ async def parse_jd(req: ParseJDRequest, current_user: dict = Depends(get_current
 
     intro_message = data.get("intro_message") or (
         f"Hi{', ' + candidate_name if candidate_name and candidate_name != 'Candidate' else ''}, "
-        f"I am Alex, your interviewer today. We are looking for a {role}. "
+        f"I am {interviewer_name}, your interviewer today. We are looking for a {role}. "
         f"I will ask you {questions_phrase(n)}. Take your time and speak clearly. "
         f"Here is your first question. {questions[0]}"
     )
@@ -408,12 +444,14 @@ async def question_bank(request: Request, req: QuestionBankRequest, current_user
     difficulty = req.difficulty or "Mid"
     difficulty_context = DIFFICULTY_QUESTION_CONTEXT.get(difficulty, DIFFICULTY_QUESTION_CONTEXT["Mid"])
 
+    interviewer_name = get_interviewer(req.interviewer)["name"]
     prompt = QUESTION_BANK_PROMPT.format(
         category=req.category.strip(),
         difficulty=difficulty,
         difficulty_context=difficulty_context,
         question_count=req.question_count,
         language_instruction=language_instruction(req.language or "en-US"),
+        interviewer_name=interviewer_name,
     )
 
     n = req.question_count
@@ -429,7 +467,7 @@ async def question_bank(request: Request, req: QuestionBankRequest, current_user
 
     role = data.get("role", f"{req.category} Practice")
     intro_message = data.get("intro_message") or (
-        f"Hi, I am Alex. Today we are practising {req.category} questions at {difficulty} level. "
+        f"Hi, I am {interviewer_name}. Today we are practising {req.category} questions at {difficulty} level. "
         f"I will ask you {questions_phrase(n)}. Take your time and speak clearly. "
         f"Here is your first question. {questions[0]}"
     )
@@ -463,6 +501,7 @@ async def respond(request: Request, req: RespondRequest, current_user: dict = De
     trimmed = trim_history(req.history, 6)
     messages = [
         {"role": "system", "content": INTERVIEWER_SYSTEM_PROMPT.format(
+            interviewer_name=get_interviewer(req.interviewer)["name"],
             role=role,
             cv_context=cv_context,
             difficulty_context=difficulty_context,
@@ -716,7 +755,7 @@ async def text_to_speech(request: Request, current_user: dict = Depends(get_curr
     if not api_key:
         raise HTTPException(status_code=500, detail="ELEVENLABS_API_KEY not configured")
 
-    voice_id = "ErXwobaYiN019PkySvjV"  # Antoni
+    voice_id = get_voice_id(body.get("interviewer"), body.get("voice"))
     async with httpx.AsyncClient(timeout=30) as http:
         resp = await http.post(
             f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",

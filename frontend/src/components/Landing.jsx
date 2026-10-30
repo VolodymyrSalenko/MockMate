@@ -4,6 +4,7 @@ import { getStoredToken } from '../context/AuthContext'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { IconMic } from '../utils/icons'
 import { useTheme } from '../context/ThemeContext'
+import { INTERVIEWERS, DEFAULT_INTERVIEWER, getInterviewer } from '../utils/interviewers'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
 
@@ -101,6 +102,8 @@ const QUESTION_COUNTS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 const MINUTES_PER_QUESTION = 2
 const QUESTION_COUNT_KEY = 'mockmate_question_count'
 
+const INTERVIEWER_KEY = 'mockmate_interviewer'
+
 // Remember the last chosen number of questions so it survives navigation and re-login
 function loadQuestionCount() {
   try {
@@ -109,6 +112,29 @@ function loadQuestionCount() {
   } catch {
     return 5
   }
+}
+
+function loadInterviewer() {
+  try {
+    return getInterviewer(localStorage.getItem(INTERVIEWER_KEY)).id
+  } catch {
+    return DEFAULT_INTERVIEWER
+  }
+}
+
+// Round portrait for the interviewer picker; falls back to the initial
+function InterviewerFace({ interviewer }) {
+  const [failed, setFailed] = useState(false)
+  return (
+    <span
+      className="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0 font-black text-white text-sm"
+      style={{ background: interviewer.background }}
+    >
+      {failed ? interviewer.name[0] : (
+        <img src={interviewer.photo} alt="" className="w-full h-full object-cover" onError={() => setFailed(true)} />
+      )}
+    </span>
+  )
 }
 
 const DIFFICULTY_INFO = {
@@ -207,6 +233,7 @@ export default function Landing({ onStart, user, onUpgrade }) {
   const [language,      setLanguage]      = useState('en-US')
   const [interviewType, setInterviewType] = useState('full')
   const [questionCount, setQuestionCount] = useState(loadQuestionCount)
+  const [interviewer,   setInterviewer]   = useState(loadInterviewer)
   const [showTemplates, setShowTemplates] = useState(false)
 
   const [cvFile,      setCvFile]      = useState(null)
@@ -269,6 +296,10 @@ export default function Landing({ onStart, user, onUpgrade }) {
   useEffect(() => {
     try { localStorage.setItem(QUESTION_COUNT_KEY, String(questionCount)) } catch {}
   }, [questionCount])
+
+  useEffect(() => {
+    try { localStorage.setItem(INTERVIEWER_KEY, interviewer) } catch {}
+  }, [interviewer])
 
   useEffect(() => {
     fetchCVProfile().then(data => {
@@ -363,10 +394,10 @@ export default function Landing({ onStart, user, onUpgrade }) {
       const res = await fetch(`${BACKEND_URL}/parse-jd`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getStoredToken()}` },
-        body: JSON.stringify({ jd_text: jd, cv_text: cvText || null, difficulty, company_name: companyName.trim() || null, interview_type: interviewType, language, question_count: questionCount }),
+        body: JSON.stringify({ jd_text: jd, cv_text: cvText || null, difficulty, company_name: companyName.trim() || null, interview_type: interviewType, language, question_count: questionCount, interviewer }),
       })
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || 'Failed to parse JD') }
-      onStart({ ...(await res.json()), difficulty, interview_type: interviewType, language })
+      onStart({ ...(await res.json()), difficulty, interview_type: interviewType, language, interviewer })
     } catch (err) {
       setError(err.message || 'Something went wrong.')
     } finally {
@@ -381,10 +412,10 @@ export default function Landing({ onStart, user, onUpgrade }) {
       const res = await fetch(`${BACKEND_URL}/question-bank`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getStoredToken()}` },
-        body: JSON.stringify({ category: selectedCategory, difficulty, language, question_count: questionCount }),
+        body: JSON.stringify({ category: selectedCategory, difficulty, language, question_count: questionCount, interviewer }),
       })
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || 'Failed to load questions') }
-      onStart({ ...(await res.json()), difficulty, interview_type: 'practice', language })
+      onStart({ ...(await res.json()), difficulty, interview_type: 'practice', language, interviewer })
     } catch (err) {
       setPracticeError(err.message || 'Something went wrong.')
     } finally {
@@ -408,6 +439,25 @@ export default function Landing({ onStart, user, onUpgrade }) {
   // Shared level + language + length settings used in both tabs
   const SettingsRow = () => (
     <div className="space-y-4">
+    <div>
+      <label className="block text-slate-600 dark:text-slate-400 text-xs font-semibold uppercase tracking-wide mb-1.5">Interviewer</label>
+      <div className="flex gap-2">
+        {INTERVIEWERS.map(iv => (
+          <button
+            key={iv.id}
+            onClick={() => setInterviewer(iv.id)}
+            className={`flex items-center gap-2.5 pl-1.5 pr-4 py-1.5 rounded-full border text-sm font-semibold transition-all ${
+              interviewer === iv.id
+                ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300'
+                : 'border-slate-200 dark:border-slate-700/50 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600'
+            }`}
+          >
+            <InterviewerFace interviewer={iv} />
+            {iv.name}
+          </button>
+        ))}
+      </div>
+    </div>
     <div className="grid grid-cols-2 gap-3">
       <div>
         <label className="block text-slate-600 dark:text-slate-400 text-xs font-semibold uppercase tracking-wide mb-1.5">Level</label>

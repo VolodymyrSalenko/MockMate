@@ -3,6 +3,7 @@ import { useAuth, getStoredToken } from '../context/AuthContext'
 import { deleteCookie } from '../utils/cookies'
 import { setAIConsent, fetchCVProfile, uploadCVProfile, analyseCV } from '../utils/api'
 import { BACKEND_URL } from '../utils/config'
+import InterviewerVoices from './InterviewerVoices'
 import { IconZap, IconBriefcase, IconGraduation, IconGlobe, IconAward, IconMail, IconPhone, IconMapPin, IconLink } from '../utils/icons'
 
 // ── Shared primitives ──────────────────────────────────────────────────────────
@@ -193,6 +194,7 @@ function ScoreBar({ score, max = 10, color = 'bg-emerald-500' }) {
 const TABS = [
   { id: 'profile',  label: 'Profile'  },
   { id: 'cv',       label: 'CV'       },
+  { id: 'interviewers', label: 'Interviewers' },
   { id: 'security', label: 'Security' },
   { id: 'privacy',  label: 'Privacy'  },
 ]
@@ -719,6 +721,9 @@ export default function Settings({ initialTab = 'profile' }) {
             )}
           </div>
         )}
+
+        {/* ── Interviewers tab ─────────────────────────────────────────────────── */}
+        {tab === 'interviewers' && <InterviewerVoices />}
 
         {/* ── Security tab ─────────────────────────────────────────────────────── */}
         {tab === 'security' && (
