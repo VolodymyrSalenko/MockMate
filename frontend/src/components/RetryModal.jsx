@@ -3,6 +3,7 @@ import { useTTS } from '../hooks/useTTS'
 import { useSTT } from '../hooks/useSTT'
 import { getStoredToken } from '../context/AuthContext'
 import { getInterviewer, getVoice } from '../utils/interviewers'
+import { to100 } from '../utils/scoring'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
 
@@ -33,19 +34,19 @@ function MiniWaveform({ active }) {
 }
 
 function ScoreDiff({ original, updated }) {
-  const diff = parseFloat((updated - original).toFixed(1))
+  const diff = to100(updated - original)
   const color = diff > 0 ? 'text-emerald-400' : diff < 0 ? 'text-red-400' : 'text-slate-400'
   const sign  = diff > 0 ? '+' : ''
   return (
     <div className="flex items-center justify-center gap-6">
       <div className="text-center">
         <p className="text-slate-500 text-xs mb-1">Original</p>
-        <p className="text-3xl font-black text-slate-400">{original}<span className="text-lg">/10</span></p>
+        <p className="text-3xl font-black text-slate-400">{to100(original)}<span className="text-lg">/100</span></p>
       </div>
       <div className="text-3xl text-slate-600">→</div>
       <div className="text-center">
         <p className="text-slate-500 text-xs mb-1">Retry</p>
-        <p className="text-3xl font-black text-white">{updated}<span className="text-lg">/10</span></p>
+        <p className="text-3xl font-black text-white">{to100(updated)}<span className="text-lg">/100</span></p>
       </div>
       {diff !== 0 && (
         <div className={`text-xl font-black ${color}`}>{sign}{diff}</div>

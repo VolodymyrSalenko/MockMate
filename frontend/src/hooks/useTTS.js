@@ -1,7 +1,7 @@
 import { useCallback, useRef } from 'react'
 import { BACKEND_URL } from '../utils/config'
 import { getStoredToken } from '../context/AuthContext'
-import { routeToRecording } from '../utils/recordingMix'
+import { routeToRecording, keepLastLine } from '../utils/recordingMix'
 
 function browserSpeak(text, onEnd, onStart) {
   const utter = new SpeechSynthesisUtterance(text)
@@ -100,7 +100,7 @@ export function useTTS({ language = 'en-US', interviewer, voice } = {}) {
       }
       audio.onended = () => {
         if (genRef.current !== myGen) return
-        URL.revokeObjectURL(url)
+        keepLastLine(url)   // kept for a recording that starts after this line
         cacheRef.current.delete(text)
         audioRef.current = null
         if (onEnd) onEnd()

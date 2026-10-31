@@ -5,7 +5,7 @@ import Debrief from './Debrief'
 import { durationLabel } from '../utils/speechAnalytics'
 import {
   scoreBg,
-  formatDate, difficultyBadge, typeBadge, langInfo,
+  formatDate, difficultyBadge, typeBadge, langInfo, to100,
 } from '../utils/scoring'
 
 function langFlag(code) { return langInfo(code).flag }
@@ -101,13 +101,13 @@ function SessionCard({ session, index, onOpen, onDelete }) {
       <div className="flex items-center pr-3">
       <button onClick={onOpen} className="flex-1 min-w-0 flex items-center gap-3 p-4 text-left">
         <div className={`w-11 h-11 rounded-full flex items-center justify-center text-sm font-black flex-shrink-0 border ${scoreBg(score)}`}>
-          {score != null ? parseFloat(score).toFixed(1) : '–'}
+          {score != null ? to100(score) : '–'}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="text-slate-700 dark:text-slate-200 text-sm font-semibold truncate">{session.role || 'Interview'}</p>
-            {session.face_confidence_score != null && (
-              <span className="text-xs text-slate-500">👁 {parseFloat(session.face_confidence_score).toFixed(1)}</span>
+            {session.eye_contact_pct != null && (
+              <span className="text-xs text-slate-500" title="Eye contact">👁 {session.eye_contact_pct}%</span>
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2 mt-0.5">

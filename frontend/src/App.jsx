@@ -140,7 +140,7 @@ function AppInner() {
     }
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Dev shortcut: ?dev=debrief (or dashboard, cv, sessions, landing) skips straight to that view
+  // Dev shortcut: ?dev=debrief opens the feedback screen with mock data (or dashboard, cv, sessions, landing) skips straight to that view
   useEffect(() => {
     const param = new URLSearchParams(window.location.search).get('dev')
     if (!param) return
@@ -151,7 +151,7 @@ function AppInner() {
         setDuration(487)
         setFaceMetrics(mockFaceMetrics)
         setRecording(mockRecording)
-        setView('debrief')
+        setView('feedback')
       })
     } else if (['dashboard', 'cv', 'sessions', 'landing', 'settings'].includes(param)) {
       setView(param)
@@ -191,7 +191,7 @@ function AppInner() {
     setDuration(totalDuration || 0)
     setFaceMetrics(metrics || null)
     setRecording(recordingData || null)
-    setView('debrief')
+    setView('feedback')
   }
 
   const handleRetry = () => {
@@ -203,13 +203,13 @@ function AppInner() {
     setView('dashboard')
   }
 
-  // Interview and debrief are full-screen — no sidebar
+  // Interview and feedback are full-screen — no sidebar
   const sidebarViews = ['dashboard', 'sessions', 'landing', 'settings', 'admin']
 
   return (
     <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950">
       <TopControls
-        belowHeader={view === 'interview' || view === 'debrief'}
+        belowHeader={view === 'interview' || view === 'feedback'}
         user={user}
         onUpgradeClick={() => setShowProModal(true)}
         actionButton={
@@ -278,7 +278,7 @@ function AppInner() {
         {view === 'interview' && sessionData && (
           <Interview sessionData={sessionData} onComplete={handleComplete} onExit={handleRetry} />
         )}
-        {view === 'debrief' && (
+        {view === 'feedback' && (
           <Debrief
             qaPairs={qaPairs}
             role={sessionData?.role || 'the position'}

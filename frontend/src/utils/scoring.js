@@ -56,6 +56,11 @@ export function langInfo(code) {
   )
 }
 
+// Scores are given 1-10 (by the AI) and shown on a 100-point scale everywhere
+export function to100(score) {
+  return score == null ? null : Math.round(score * 10)
+}
+
 export function avgArr(arr) {
   return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null
 }

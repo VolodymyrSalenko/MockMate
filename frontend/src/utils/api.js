@@ -79,6 +79,7 @@ export async function saveSessionToDB(debrief, qaPairs, role, difficulty, interv
       feedback:        a.feedback,
       tip:             a.tip,
       ideal_answer:    a.ideal_answer,
+      star:            a.star || null,
       analytics:       qaPairs[i]?.analytics || null,
     }))
 
@@ -86,7 +87,6 @@ export async function saveSessionToDB(debrief, qaPairs, role, difficulty, interv
     const face_metrics = (fm && fm.samplesCount >= 30) ? {
       eye_contact_pct:       fm.eyeContactPct,
       head_stability_pct:    fm.headStabilityPct,
-      face_confidence_score: fm.confidenceScore,
       face_samples_count:    fm.samplesCount,
     } : null
 
