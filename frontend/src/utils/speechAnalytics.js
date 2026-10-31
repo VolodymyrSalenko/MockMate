@@ -1,44 +1,46 @@
-const FILLER_WORDS = [
-  'um', 'uh', 'er', 'ah',
-  'like', 'basically', 'literally', 'actually',
-  'you know', 'i mean', 'kind of', 'sort of',
-  'right', 'okay so', 'so yeah',
-]
+// Always fillers, whatever the context
+const FILLERS = ['um', 'uh', 'er', 'erm', 'ah', 'hmm', 'you know', 'i mean', 'basically', 'literally', 'so yeah']
 
-const STAR_PATTERNS = {
-  situation: /\b(situation|context|background|when i was|we were|there was|in my|at the time|working at|i was at|i was working|at my (previous|last|current)|in my (previous|last|current))\b/i,
-  task:      /\b(task|responsible|my role|i was (asked|tasked)|needed to|had to|my job|my goal|i needed|we needed|the goal was|objective|i was supposed to)\b/i,
-  action:    /\b(i (did|decided|took|implemented|built|created|solved|worked|started|developed|designed|led|managed|reached out|contacted|set up|organized|wrote|fixed|helped)|so i|then i|i first|my approach|i chose|what i did)\b/i,
-  result:    /\b(result|outcome|achieved|improved|reduced|increased|saved|delivered|completed|as a result|in the end|ultimately|the impact|we (achieved|succeeded|managed)|it worked|it helped|this led|ended up|the team|percent|%)\b/i,
+// Fillers only in some contexts: each is skipped when the word before it shows normal use
+const CONTEXT_FILLERS = {
+  // "I'd like", "looks like", "something like" are normal
+  'like': ['i', "i'd", 'you', 'we', 'they', "we'd", "you'd", "they'd", 'would', 'to', "don't", "didn't", 'not',
+           'really', 'also', 'feel', 'feels', 'felt', 'look', 'looks', 'looked', 'sounds', 'seems', 'seemed',
+           'something', 'anything', 'nothing', 'things', 'just', 'more', 'much', 'exactly', 'is', 'was',
+           'are', 'were', 'be', 'been', 'likes', 'liked'],
+  // "what kind of", "the sort of" are normal
+  'kind of': ['what', 'this', 'that', 'these', 'those', 'the', 'a', 'any', 'some', 'which', 'same', 'every', 'all', 'different', 'other'],
+  'sort of': ['what', 'this', 'that', 'these', 'those', 'the', 'a', 'any', 'some', 'which', 'same', 'every', 'all', 'different', 'other'],
 }
 
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+function countFillers(lower) {
+  const counts = {}
+  const add = (word) => { counts[word] = (counts[word] || 0) + 1 }
+  for (const filler of FILLERS) {
+    const n = (lower.match(new RegExp(`\\b${escapeRe(filler)}\\b`, 'g')) || []).length
+    if (n) counts[filler] = n
+  }
+  for (const [filler, normalBefore] of Object.entries(CONTEXT_FILLERS)) {
+    // A pause mark before it ("we, like, ...") also makes it a filler
+    const re = new RegExp(`(?:^|([\\w']+)([\\s,.;:!?-]+))${escapeRe(filler)}\\b`, 'g')
+    for (const m of lower.matchAll(re)) {
+      if (!m[1] || /\S/.test(m[2]) || !normalBefore.includes(m[1])) add(filler)
+    }
+  }
+  return counts
+}
+
+// Speech delivery for one answer. Answer structure (STAR) is judged by the AI in the debrief.
 export function analyzeAnswer(transcript, durationSeconds) {
   const lower = transcript.toLowerCase()
   const words = lower.split(/\s+/).filter(Boolean)
   const wordCount = words.length
   const wpm = durationSeconds > 5 ? Math.round((wordCount / durationSeconds) * 60) : 0
 
-  // Count filler words (whole-word matching)
-  const fillerCounts = {}
-  let totalFillers = 0
-  FILLER_WORDS.forEach((filler) => {
-    const escaped = filler.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const regex = new RegExp(`\\b${escaped}\\b`, 'gi')
-    const matches = transcript.match(regex)
-    if (matches && matches.length > 0) {
-      fillerCounts[filler] = matches.length
-      totalFillers += matches.length
-    }
-  })
-
-  // STAR detection (only meaningful for behavioral questions)
-  const star = {
-    situation: STAR_PATTERNS.situation.test(lower),
-    task:      STAR_PATTERNS.task.test(lower),
-    action:    STAR_PATTERNS.action.test(lower),
-    result:    STAR_PATTERNS.result.test(lower),
-  }
-  const starScore = Object.values(star).filter(Boolean).length
+  const fillerCounts = countFillers(lower)
+  const totalFillers = Object.values(fillerCounts).reduce((a, b) => a + b, 0)
 
   return {
     wordCount,
@@ -46,8 +48,6 @@ export function analyzeAnswer(transcript, durationSeconds) {
     wpm,
     fillerCounts,
     totalFillers,
-    star,
-    starScore,
   }
 }
 

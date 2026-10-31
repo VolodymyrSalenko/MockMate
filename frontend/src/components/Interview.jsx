@@ -3,6 +3,7 @@ import { useTTS } from '../hooks/useTTS'
 import { useSTT } from '../hooks/useSTT'
 import { useFaceAnalysis } from '../hooks/useFaceAnalysis'
 import { useMediaRecorder } from '../hooks/useMediaRecorder'
+import { prepareRecordingMix, addLastLineToRecording, stopLastLineInRecording } from '../utils/recordingMix'
 import { analyzeAnswer } from '../utils/speechAnalytics'
 import { getStoredToken } from '../context/AuthContext'
 import { getInterviewer, getVoice } from '../utils/interviewers'
@@ -342,6 +343,9 @@ export default function Interview({ sessionData, onComplete, onExit }) {
     return () => clearInterval(elapsedIntervalRef.current)
   }, [])
 
+  // Ready the audio mix before the intro plays, so every line can reach the recording
+  useEffect(() => { prepareRecordingMix() }, [])
+
   // Cleanup webcam on unmount
   useEffect(() => {
     return () => { webcamStream?.getTracks().forEach(t => t.stop()) }
@@ -363,6 +367,8 @@ export default function Interview({ sessionData, onComplete, onExit }) {
         setWebcamStream(stream)
         setWebcamError('')
         startRecording(stream)
+        // The question was already asked: start the recording with it
+        if (status === 'idle') addLastLineToRecording()
       } catch {
         setWebcamError('Camera or microphone access denied.')
       }
@@ -490,6 +496,7 @@ export default function Interview({ sessionData, onComplete, onExit }) {
 
   useEffect(() => {
     if (isListening) {
+      stopLastLineInRecording()
       setCountdown(90)
       countdownIntervalRef.current = setInterval(() => {
         setCountdown(prev => { if (prev <= 1) { stop(); return 90 } return prev - 1 })

@@ -700,7 +700,7 @@ async def debrief(req: DebriefRequest, current_user: dict = Depends(get_current_
         except Exception as e:
             print(f"⚠️  /debrief attempt {attempt} failed: {type(e).__name__}: {e}")
     if data is None:
-        raise HTTPException(status_code=500, detail="Failed to generate debrief — please try again")
+        raise HTTPException(status_code=500, detail="Failed to generate feedback — please try again")
 
     return finalize_debrief(data)
 
@@ -777,6 +777,7 @@ class AnswerIn(BaseModel):
     ideal_answer:    Optional[str]   = Field(None, max_length=2000)
     analytics:       Optional[Any]   = None
     ai_answer_score: Optional[float] = None
+    star:            Optional[dict]  = None
 
 
 class FaceMetricsIn(BaseModel):

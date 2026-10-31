@@ -7,7 +7,7 @@ export const FEATURES = [
   { label: 'Interview modes',             free: '3 modes',    pro: 'All 5 modes' },
   { label: 'AI scoring & feedback',       free: true,         pro: true },
   { label: 'Speech analytics',           free: true,         pro: true },
-  { label: 'Debrief reports',            free: true,         pro: true },
+  { label: 'Feedback reports',           free: true,         pro: true },
   { label: 'Job description upload',     free: false,        pro: true },
   { label: 'Body language analysis',     free: false,        pro: true },
   { label: 'Video recording & playback', free: false,        pro: true },

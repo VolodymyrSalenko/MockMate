@@ -61,7 +61,7 @@ const MODEL_PATH = 'https://storage.googleapis.com/mediapipe-models/face_landmar
 
 export function useFaceAnalysis(videoRef, enabled) {
   const [metrics, setMetrics] = useState({
-    eyeContactPct: 0, headStabilityPct: 0, confidenceScore: 0,
+    eyeContactPct: 0, headStabilityPct: 0,
     isAnalyzing: false, samplesCount: 0, expression: 'neutral',
   })
 
@@ -115,12 +115,10 @@ export function useFaceAnalysis(videoRef, enabled) {
 
       const eyePct  = Math.round((s.eyeContactFrames / s.total) * 100)
       const headPct = Math.round((s.stableFrames       / s.total) * 100)
-      const conf    = parseFloat((eyePct * 0.6 + headPct * 0.4) / 10).toFixed(1)
 
       setMetrics({
         eyeContactPct:    eyePct,
         headStabilityPct: headPct,
-        confidenceScore:  Math.min(10, Math.max(0, parseFloat(conf))),
         isAnalyzing:      true,
         samplesCount:     s.total,
         expression,
@@ -141,7 +139,7 @@ export function useFaceAnalysis(videoRef, enabled) {
     if (enabled) {
       statsRef.current = { eyeContactFrames: 0, stableFrames: 0, total: 0 }
       lastTimeRef.current = -1
-      setMetrics({ eyeContactPct: 0, headStabilityPct: 0, confidenceScore: 0, isAnalyzing: false, samplesCount: 0, expression: 'neutral' })
+      setMetrics({ eyeContactPct: 0, headStabilityPct: 0, isAnalyzing: false, samplesCount: 0, expression: 'neutral' })
     }
   }, [enabled])
 

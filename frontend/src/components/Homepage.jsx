@@ -50,7 +50,7 @@ const FEATURES = [
       </svg>
     ),
     title: 'Body Language Analysis',
-    desc: 'Webcam-based eye contact, head posture, and facial confidence scoring shown in your debrief.',
+    desc: 'Webcam-based eye contact and head posture throughout the interview, shown in your feedback.',
     pro: true,
   },
   {
@@ -72,7 +72,7 @@ const FEATURES = [
         <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
       </svg>
     ),
-    title: 'Debrief Reports',
+    title: 'Feedback Reports',
     desc: 'Per-question scores, written feedback and model answers, saved with every session.',
     pro: false,
   },
@@ -111,7 +111,7 @@ const STEPS = [
   },
   {
     n: '3',
-    title: 'Review your debrief',
+    title: 'Review your feedback',
     desc: 'Get per-question scores, written feedback, speech analytics, and model answers instantly.',
   },
 ]
@@ -188,7 +188,7 @@ export default function Homepage({ onLogin, onRegister }) {
           className="text-slate-600 dark:text-slate-400 text-lg sm:text-xl max-w-lg mb-8 leading-relaxed animate-fade-up"
           style={{ animationDelay: '0.1s' }}
         >
-          Practice with an AI interviewer, get a detailed debrief, and walk in with confidence.
+          Practice with an AI interviewer, get detailed feedback, and walk in with confidence.
         </p>
 
         <div className="flex gap-3 animate-fade-up" style={{ animationDelay: '0.15s' }}>

@@ -5,6 +5,7 @@ import { getStoredToken } from "../context/AuthContext";
 import RetryModal from "./RetryModal";
 import { BACKEND_URL } from "../utils/config";
 import { getInterviewer } from "../utils/interviewers";
+import { to100 } from "../utils/scoring";
 import { saveRecording } from "../utils/recordingStore";
 
 function BgOrbs() {
@@ -18,6 +19,7 @@ function BgOrbs() {
 
 function ScoreBadge({ score }) {
   const rounded = Math.round(score);
+  const shown = to100(score);
   const style =
     rounded >= 8
       ? {
@@ -38,10 +40,10 @@ function ScoreBadge({ score }) {
           };
   return (
     <div
-      className="w-10 h-10 rounded-full flex items-center justify-center font-black text-sm flex-shrink-0"
+      className="w-10 h-10 rounded-full flex items-center justify-center font-black text-xs flex-shrink-0"
       style={style}
     >
-      {rounded}
+      {shown}
     </div>
   );
 }
@@ -67,10 +69,10 @@ function OverallScoreBadge({ score }) {
       }}
     >
       <span className="text-4xl font-black text-white">
-        {parseFloat(score).toFixed(1)}
+        {to100(score)}
       </span>
       <span className="text-white/60 text-xs font-semibold tracking-wide">
-        / 10
+        / 100
       </span>
     </div>
   );
@@ -176,7 +178,7 @@ function ScoreBreakdown({ scores }) {
           <div key={key}>
             <div className="flex justify-between text-xs mb-1">
               <span className="text-slate-600 dark:text-slate-400 font-semibold">{label}</span>
-              <span className="text-slate-700 dark:text-slate-300 font-bold">{s}</span>
+              <span className="text-slate-700 dark:text-slate-300 font-bold">{to100(s)}</span>
             </div>
             <div className="h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
               <div className={`h-full rounded-full ${bar}`} style={{ width: `${s * 10}%` }} />
@@ -298,7 +300,7 @@ function AnswerTile({ item, index, onOpen }) {
             <span className="ml-2 normal-case tracking-normal font-semibold text-slate-400">· follow-up</span>
           )}
         </span>
-        <span className={`text-xl font-black ${tone.text}`}>{parseFloat(item.score).toFixed(1)}</span>
+        <span className={`text-xl font-black ${tone.text}`}>{to100(item.score)}</span>
       </div>
       <p className="text-slate-700 dark:text-slate-200 text-sm font-semibold leading-snug line-clamp-3">
         {item.question}
@@ -327,7 +329,7 @@ function AnswerTile({ item, index, onOpen }) {
         )}
         {item.retries?.length > 0 ? (
           <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-            🔄 best {Math.max(...item.retries.map((r) => r.score ?? 0)).toFixed(1)}
+            🔄 best {to100(Math.max(...item.retries.map((r) => r.score ?? 0)))}
           </span>
         ) : (
           <span className="text-xs font-semibold text-slate-500">Open →</span>
@@ -363,7 +365,7 @@ function RetryAttempts({ retries, originalScore }) {
                     {diff != null && diff !== 0 && (
                       <span className={`ml-2 ${diff > 0 ? "text-emerald-500" : "text-red-500"}`}>
                         {diff > 0 ? "+" : ""}
-                        {parseFloat(diff.toFixed(1))} vs interview
+                        {to100(diff)} vs interview
                       </span>
                     )}
                   </p>
@@ -427,7 +429,7 @@ function AnswerDetail({ item, index, interviewerName, onRetry }) {
 
       {item.ideal_answer && (
         <div className="bg-amber-500/8 border border-amber-500/20 rounded-2xl p-4">
-          <p className="text-xs text-amber-500 dark:text-amber-400 font-bold mb-1.5">⭐ Your answer, improved (9/10)</p>
+          <p className="text-xs text-amber-500 dark:text-amber-400 font-bold mb-1.5">⭐ Your answer, improved (90/100)</p>
           <p className="text-slate-700 dark:text-amber-200/90 text-sm leading-relaxed">{item.ideal_answer}</p>
           {item.ideal_answer.includes("[") && (
             <p className="text-xs text-amber-600 dark:text-amber-400/70 mt-2">
@@ -611,7 +613,6 @@ function BodyLanguageCard({ metrics }) {
 
   const eyePct = metrics.eyeContactPct;
   const headPct = metrics.headStabilityPct;
-  const conf = metrics.confidenceScore;
 
   const eyeColor =
     eyePct >= 70
@@ -625,12 +626,6 @@ function BodyLanguageCard({ metrics }) {
       : headPct >= 40
         ? "bg-amber-400"
         : "bg-red-500";
-  const confColor =
-    conf >= 7
-      ? "text-emerald-400"
-      : conf >= 4
-        ? "text-amber-400"
-        : "text-red-400";
   const tip =
     eyePct < 50
       ? `Try to keep your eyes on the camera — you maintained eye contact only ${eyePct}% of the time.`
@@ -642,7 +637,7 @@ function BodyLanguageCard({ metrics }) {
     <div className="glass border border-slate-200 dark:border-slate-700/40 rounded-3xl p-5 space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-slate-900 dark:text-white font-bold text-lg">👁 Body Language</p>
-        <span className={`text-2xl font-black ${confColor}`}>{conf.toFixed(1)}<span className="text-slate-600 text-sm font-normal">/10</span></span>
+        <span className="text-xs text-slate-500">whole interview</span>
       </div>
       <div className="space-y-3">
         <div>
@@ -830,7 +825,7 @@ export default function Debrief({
             <div className="w-20 h-20 rounded-full border-4 border-slate-800 border-t-emerald-500 animate-spin" />
           </div>
           <p className="text-slate-600 dark:text-slate-300 text-xl font-bold">
-            Preparing your debrief...
+            Preparing your feedback...
           </p>
           <p className="text-slate-600 dark:text-slate-400 text-sm">
             Analysing content &amp; speech patterns
@@ -884,7 +879,7 @@ export default function Debrief({
             {saved ? `Session · ${sessionDate}` : "✅ Interview Complete"}
           </p>
           <h1 className="text-4xl font-black text-slate-900 dark:text-white mb-2">
-            Your Full Debrief
+            Your Interview Feedback
           </h1>
           <p className="text-slate-600 dark:text-slate-400 text-sm">
             {role} ·{" "}

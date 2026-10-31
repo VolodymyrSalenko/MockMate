@@ -185,7 +185,7 @@ function ScoreBar({ score, max = 10, color = 'bg-emerald-500' }) {
       <div className="flex-1 h-1.5 bg-slate-200 dark:bg-slate-700/60 rounded-full overflow-hidden">
         <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${Math.round((score / max) * 100)}%` }} />
       </div>
-      <span className="text-xs font-bold text-slate-700 dark:text-slate-300 w-6 text-right">{score}</span>
+      <span className="text-xs font-bold text-slate-700 dark:text-slate-300 w-7 text-right">{Math.round((score / max) * 100)}</span>
     </div>
   )
 }
@@ -672,7 +672,7 @@ export default function Settings({ initialTab = 'profile' }) {
                       <div className="bg-slate-100/60 dark:bg-slate-800/40 rounded-xl p-3 text-center">
                         <p className="text-slate-500 text-xs mb-1">Overall</p>
                         <p className={`text-2xl font-black ${analysis.overall_score >= 8 ? 'text-emerald-500' : analysis.overall_score >= 5 ? 'text-amber-500' : 'text-red-500'}`}>
-                          {analysis.overall_score}<span className="text-sm font-semibold text-slate-400">/10</span>
+                          {Math.round(analysis.overall_score * 10)}<span className="text-sm font-semibold text-slate-400">/100</span>
                         </p>
                       </div>
                       <div className="bg-slate-100/60 dark:bg-slate-800/40 rounded-xl p-3 text-center">

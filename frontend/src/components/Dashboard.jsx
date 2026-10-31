@@ -9,7 +9,7 @@ import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import {
   scoreColor, scoreHex,
-  formatShort, langInfo, avgArr,
+  formatShort, langInfo, avgArr, to100,
 } from '../utils/scoring'
 import { IconList, IconStar, IconTarget, IconTrophy, IconFlame, IconGlobe, IconBarChart, IconMic } from '../utils/icons'
 
@@ -58,7 +58,8 @@ function ScoreChart({ sessions }) {
     .slice(-10)
     .map(s => ({
       date:    formatShort(s.created_at),
-      content: parseFloat(parseFloat(s.overall_score).toFixed(1)),
+      content: to100(s.overall_score),
+      raw:     s.overall_score,
       role:    s.role || '',
     }))
 
@@ -73,16 +74,16 @@ function ScoreChart({ sessions }) {
         <ResponsiveContainer width="100%" height={160}>
           <LineChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
             <XAxis dataKey="date" tick={{ fill: '#475569', fontSize: 10 }} axisLine={false} tickLine={false} />
-            <YAxis domain={[0, 10]} ticks={[0, 5, 10]} tick={{ fill: '#475569', fontSize: 10 }} axisLine={false} tickLine={false} />
-            <ReferenceLine y={7} stroke="rgba(16,185,129,0.15)" strokeDasharray="4 4" />
+            <YAxis domain={[0, 100]} ticks={[0, 50, 100]} tick={{ fill: '#475569', fontSize: 10 }} axisLine={false} tickLine={false} />
+            <ReferenceLine y={70} stroke="rgba(16,185,129,0.15)" strokeDasharray="4 4" />
             <Tooltip
               contentStyle={tooltipStyle}
               labelStyle={{ color: theme === 'dark' ? '#e2e8f0' : '#1e293b', fontWeight: 700, fontSize: 11 }}
               itemStyle={{ fontSize: 11, color: theme === 'dark' ? '#94a3b8' : '#475569' }}
-              formatter={(v) => [`${v}/10`, 'Score']}
+              formatter={(v) => [`${v}/100`, 'Score']}
             />
             <Line type="monotone" dataKey="content" stroke="#10b981" strokeWidth={2.5}
-              dot={({ cx, cy, payload, key }) => <circle key={key} cx={cx} cy={cy} r={4} fill={scoreHex(payload.content)} stroke="#020617" strokeWidth={2} />}
+              dot={({ cx, cy, payload, key }) => <circle key={key} cx={cx} cy={cy} r={4} fill={scoreHex(payload.raw)} stroke="#020617" strokeWidth={2} />}
               activeDot={{ r: 6, fill: '#10b981' }} />
           </LineChart>
         </ResponsiveContainer>
@@ -92,14 +93,24 @@ function ScoreChart({ sessions }) {
 }
 
 // ── Skill benchmark radar ─────────────────────────────────────────────────────
+// Each axis is 0-100: the three answer criteria (AI, 1-10 × 10), STAR coverage (AI),
+// and the two webcam measurements taken while answering
+const SKILL_AXES = [
+  { skill: 'Relevance',   get: s => s.skills?.relevance, scale: 10 },
+  { skill: 'Examples',    get: s => s.skills?.examples,  scale: 10 },
+  { skill: 'Clarity',     get: s => s.skills?.clarity,   scale: 10 },
+  { skill: 'Structure',   get: s => s.skills?.structure, scale: 1 },
+  { skill: 'Eye Contact', get: s => s.eye_contact_pct,   scale: 1 },
+  { skill: 'Stability',   get: s => s.head_stability_pct, scale: 1 },
+]
+
 function SkillBenchmark({ sessions }) {
   const valid = sessions.filter(s => s.overall_score != null)
-  const skillData = [
-    { skill: 'Content',     value: valid.length ? Math.round((avgArr(valid.map(s=>s.overall_score)) || 0) * 10) : 0 },
-    { skill: 'Eye Contact', value: valid.length ? Math.round(avgArr(sessions.filter(s=>s.eye_contact_pct!=null).map(s=>s.eye_contact_pct)) || 0) : 0 },
-    { skill: 'Confidence',  value: valid.length ? Math.round((avgArr(sessions.filter(s=>s.face_confidence_score!=null).map(s=>s.face_confidence_score)) || 0) * 10) : 0 },
-    { skill: 'Stability',   value: valid.length ? Math.round(avgArr(sessions.filter(s=>s.head_stability_pct!=null).map(s=>s.head_stability_pct)) || 0) : 0 },
-  ]
+  const skillData = SKILL_AXES.map(({ skill, get, scale }) => {
+    const values = sessions.map(get).filter(v => v != null)
+    const value  = values.length ? Math.round(avgArr(values) * scale) : null
+    return { skill, value: value ?? 0, label: value ?? '–' }
+  })
 
   return (
     <div className="glass border border-slate-200 dark:border-slate-700/40 rounded-2xl p-6 h-full">
@@ -120,7 +131,7 @@ function SkillBenchmark({ sessions }) {
           <div className="flex justify-center gap-3 mt-1 flex-wrap">
             {skillData.map(d => (
               <div key={d.skill} className="text-center">
-                <p className="text-emerald-400 text-xs font-bold">{d.value}</p>
+                <p className="text-emerald-400 text-xs font-bold">{d.label}</p>
                 <p className="text-slate-600 dark:text-slate-400 text-xs">{d.skill}</p>
               </div>
             ))}
@@ -149,7 +160,7 @@ function BreakdownCard({ title, icon, rows }) {
                   <span className="text-slate-600 dark:text-slate-400">×{r.count}</span>
                 </span>
                 {r.avg != null && (
-                  <span className={`font-bold ${scoreColor(r.avg)}`}>{r.avg.toFixed(1)}/10</span>
+                  <span className={`font-bold ${scoreColor(r.avg)}`}>{to100(r.avg)}/100</span>
                 )}
               </div>
               <div className="h-1 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
@@ -383,10 +394,10 @@ export default function Dashboard({ onNavigate }) {
             {/* ── Step 1: Stats (4 cards) ── */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <StatCard icon={<IconList className="w-4 h-4" />}    label="Sessions"      value={sessions.length}  sub={thisMonth ? `${thisMonth} this month · ${durationLabel(totalSeconds)}` : durationLabel(totalSeconds)} />
-              <StatCard icon={<IconStar className="w-4 h-4" />}    label="Avg Score"     value={avgScore ? `${avgScore.toFixed(1)}/10` : '–'} sub="Content quality" color={avgScore ? scoreColor(avgScore) : 'text-slate-500'} />
+              <StatCard icon={<IconStar className="w-4 h-4" />}    label="Avg Score"     value={avgScore ? `${to100(avgScore)}/100` : '–'} sub="Content quality" color={avgScore ? scoreColor(avgScore) : 'text-slate-500'} />
               <StatCard
                 icon={<IconTrophy className="w-4 h-4" />} label="Best Session"
-                value={bestSession ? parseFloat(bestSession.overall_score).toFixed(1) : '–'}
+                value={bestSession ? `${to100(bestSession.overall_score)}/100` : '–'}
                 sub={bestSession ? (bestSession.role?.split('–')[0]?.trim() || 'Interview') : 'No data yet'}
                 color="text-amber-400"
               />

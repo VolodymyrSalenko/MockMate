@@ -101,8 +101,8 @@ export default function Sidebar({ activeTab, onTab, collapsed, onToggle, onUpgra
         {!collapsed && (
           <p className="text-slate-400 dark:text-slate-600 text-xs font-bold uppercase tracking-widest px-4 pt-1 pb-1">Menu</p>
         )}
-        <NavItem icon={<IconBarChart className="w-4 h-4" />} label="Dashboard" active={activeTab === 'dashboard'} collapsed={collapsed} onClick={() => onTab('dashboard')} />
         <NavItem icon={<IconMic className="w-4 h-4" />}     label="Practice"  active={activeTab === 'landing'}   collapsed={collapsed} onClick={() => onTab('landing')} />
+        <NavItem icon={<IconBarChart className="w-4 h-4" />} label="Dashboard" active={activeTab === 'dashboard'} collapsed={collapsed} onClick={() => onTab('dashboard')} />
         <NavItem icon={<IconList className="w-4 h-4" />}    label="Sessions"  active={activeTab === 'sessions'}  collapsed={collapsed} onClick={() => onTab('sessions')} />
         <NavItem
           icon={

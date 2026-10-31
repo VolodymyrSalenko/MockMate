@@ -1,6 +1,6 @@
 # MockMate — AI Voice Interview Simulator
 
-Practice job interviews with a human-sounding AI interviewer. Paste a job description (or upload it as a file), answer 5 questions by voice, and receive a fully scored debrief with speech analytics. Your sessions and CV are saved to a personal dashboard.
+Practice job interviews with a human-sounding AI interviewer. Paste a job description (or upload it as a file), answer 5 questions by voice, and receive fully scored feedback with speech analytics. Your sessions and CV are saved to a personal dashboard.
 
 **Live Demo:** https://mockmate-hk93.onrender.com
 
@@ -37,7 +37,7 @@ flowchart TD
     R --> L
     Q -- No --> S[POST /debrief\nClaude scores all 5 answers]
 
-    S --> T[Debrief Page]
+    S --> T[Feedback Page]
     T --> U[Per-answer scores\nfeedback + tips + ideal answers]
     T --> V[Speech analytics: WPM · fillers · STAR]
     T --> W[Overall score + verdict]
@@ -45,7 +45,7 @@ flowchart TD
     W --> X[Session saved to PostgreSQL]
     X --> Y{User choice}
     Y --> Z[Retry a question]
-    Y --> AA[Reopen the full debrief in Sessions]
+    Y --> AA[Reopen the full feedback in Sessions]
     Y --> AB[Dashboard]
 ```
 
@@ -64,12 +64,12 @@ flowchart TD
 - Question bank mode (System Design, React, Python, SQL, Leadership, and more)
 - Language support: **English · German · French**
 
-### Debrief
+### Feedback
 - Per-answer score (0–10), feedback, actionable tip, and model ideal answer
 - Speech analytics: WPM, filler word count, STAR framework detection
 - Overall score, performance verdict, and improvement summary
 - Retry any question and keep every attempt with the session
-- The full debrief stays in Sessions; the video recording stays in your browser
+- The full feedback stays in Sessions; the video recording stays in your browser
 
 ### Dashboard
 - Session history with per-session drill-down (scores, STAR breakdown, speech stats)

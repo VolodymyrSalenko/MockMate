@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
-import { startRecordingMix, stopRecordingMix } from '../utils/recordingMix'
+import { startRecordingMix } from '../utils/recordingMix'
 
 export function useMediaRecorder() {
   const recorderRef = useRef(null)
@@ -22,7 +22,8 @@ export function useMediaRecorder() {
     try {
       chunksRef.current = []
       // Camera video + microphone mixed with the interviewer's voice
-      const recorder = new MediaRecorder(startRecordingMix(stream), { mimeType: 'video/webm' })
+      const mix = startRecordingMix(stream)
+      const recorder = new MediaRecorder(mix.stream, { mimeType: 'video/webm' })
 
       recorder.ondataavailable = (event) => {
         if (event.data && event.data.size > 0) chunksRef.current.push(event.data)
@@ -30,7 +31,7 @@ export function useMediaRecorder() {
 
       // The recording stays in the browser; the debrief stores it with the saved session
       recorder.onstop = () => {
-        stopRecordingMix()
+        mix.stop()
         const blob = new Blob(chunksRef.current, { type: 'video/webm' })
         setRecordingUrl(URL.createObjectURL(blob))
         setIsRecording(false)

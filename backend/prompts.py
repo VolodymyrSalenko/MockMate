@@ -199,7 +199,7 @@ Follow-ups: if the interviewer asked a follow-up, evaluate the whole exchange (f
 
 "improved_answer": rewrite the candidate's OWN answer as a 9/10 version in 3-5 sentences, first person, keeping their real experience and facts. Never invent employers, projects, tools, numbers or results they did not mention: every missing detail must be a placeholder in square brackets, e.g. [X hours], [your result], [the tool you used]. This also applies to short answers. Only if the answer was empty or completely off-topic, write a short model answer instead.
 
-Write "feedback", "tip", "summary", "top_strength" and "top_improvement" addressed directly to the candidate ("you", "your"), in a warm, honest coaching tone. Never refer to the candidate by name or as "he", "she" or "the candidate" in these fields.
+Write "feedback", "tip", "summary", "top_strength" and "top_improvement" addressed directly to the candidate ("you", "your"), in a warm, honest coaching tone. Never refer to the candidate by name or as "he", "she" or "the candidate" in these fields, and never write scores or numbers like "6/10" in them (the app shows scores on its own scale).
 
 "hiring_decision": would a real interviewer invite this candidate to the next round for this role and level? "yes", "maybe" or "no", with a one-sentence reason.
 

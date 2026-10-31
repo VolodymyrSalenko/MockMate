@@ -276,7 +276,7 @@ def save_session(
 
             for a in answers:
                 analytics = a.get("analytics") or {}
-                star      = analytics.get("star") or {}
+                star      = a.get("star") or {}  # judged by the AI
                 cur.execute("""
                     INSERT INTO answers (
                         session_id, question_index, question, answer,
@@ -294,9 +294,30 @@ def save_session(
                     analytics.get("totalFillers"), analytics.get("durationSeconds"),
                     star.get("situation"), star.get("task"), star.get("action"), star.get("result"),
                     json.dumps(analytics.get("fillerCounts")) if analytics.get("fillerCounts") else None,
-                    analytics.get("starScore"), a.get("ai_answer_score"),
+                    sum(1 for v in star.values() if v) if star else None, a.get("ai_answer_score"),
                 ))
         return session_id
+
+
+def _avg(values):
+    values = [v for v in values if isinstance(v, (int, float))]
+    return round(sum(values) / len(values), 1) if values else None
+
+
+def report_skills(report) -> dict | None:
+    """Per-session answer skills from the saved debrief: the three criteria (1-10)
+    and how much of S-T-A-R the answers covered (0-100)."""
+    answers = ((report or {}).get("debrief") or {}).get("answers") or []
+    if not answers:
+        return None
+    scores = [a.get("scores") or {} for a in answers]
+    stars  = [a["star"] for a in answers if isinstance(a.get("star"), dict)]
+    return {
+        "relevance": _avg([s.get("relevance") for s in scores]),
+        "examples":  _avg([s.get("examples") for s in scores]),
+        "clarity":   _avg([s.get("clarity") for s in scores]),
+        "structure": round(100 * sum(sum(1 for v in s.values() if v) for s in stars) / (4 * len(stars))) if stars else None,
+    }
 
 
 def get_sessions(user_id: str) -> list:
@@ -307,13 +328,17 @@ def get_sessions(user_id: str) -> list:
                        overall_score, duration_seconds,
                        language, company_name, candidate_name,
                        ai_score, ai_verdict,
-                       eye_contact_pct, head_stability_pct, face_confidence_score
+                       eye_contact_pct, head_stability_pct,
+                       report
                 FROM   sessions
                 WHERE  user_id = %s
                 ORDER  BY created_at DESC
             """, (user_id,))
             cols = [d[0] for d in cur.description]
-            return [dict(zip(cols, row)) for row in cur.fetchall()]
+            sessions = [dict(zip(cols, row)) for row in cur.fetchall()]
+    for s in sessions:
+        s["skills"] = report_skills(s.pop("report"))
+    return sessions
 
 
 def delete_session(session_id: int, user_id: str) -> bool:
