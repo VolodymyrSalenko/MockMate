@@ -107,6 +107,7 @@ export async function saveSessionToDB(debrief, qaPairs, role, difficulty, interv
         company_name:     opts.companyName   || null,
         candidate_name:   opts.candidateName || null,
         face_metrics,
+        report:           opts.report        || null,
       }),
     })
 
@@ -131,6 +132,23 @@ export async function fetchSessions() {
     return data.sessions || []
   } catch {
     return []
+  }
+}
+
+/**
+ * Save one retry attempt of a question to an already saved session.
+ * @returns {Promise<boolean>}
+ */
+export async function saveRetry(sessionId, questionIndex, retry) {
+  try {
+    const res = await fetch(`${BACKEND_URL}/sessions/${sessionId}/answers/${questionIndex}/retries`, {
+      method:  'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body:    JSON.stringify(retry),
+    })
+    return res.ok
+  } catch {
+    return false
   }
 }
 

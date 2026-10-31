@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { fetchSessions, fetchSessionDetail, deleteSession } from '../utils/api'
+import { getRecording, deleteRecording } from '../utils/recordingStore'
+import Debrief from './Debrief'
 import { durationLabel } from '../utils/speechAnalytics'
 import {
   scoreBg,
@@ -8,169 +10,84 @@ import {
 
 function langFlag(code) { return langInfo(code).flag }
 
-// ── Progress bar ──────────────────────────────────────────────────────────────
-function ProgressBar({ pct, color }) {
-  return (
-    <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-      <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%`, transition: 'width 0.7s ease' }} />
-    </div>
-  )
+// ── One saved session, shown as the full debrief ─────────────────────────────
+// Sessions saved before full reports were stored only have the per-answer basics
+function reportFromColumns(detail) {
+  return {
+    debrief: {
+      overall_score:   detail.overall_score,
+      summary:         detail.summary,
+      top_strength:    detail.top_strength,
+      top_improvement: detail.top_improvement,
+      answers: (detail.answers || []).map(a => ({
+        question:       a.question,
+        answer_summary: a.answer,
+        score:          a.score,
+        feedback:       a.feedback,
+        tip:            a.tip,
+        ideal_answer:   a.ideal_answer,
+      })),
+    },
+    qa_pairs: [],
+  }
 }
 
-// ── Face metrics panel ────────────────────────────────────────────────────────
-function FacePanel({ session }) {
-  const { eye_contact_pct: eye, head_stability_pct: head, face_confidence_score: conf } = session
-  if (eye == null && head == null) return null
-  return (
-    <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/60 rounded-2xl p-4 space-y-2">
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-slate-600 dark:text-slate-400 font-bold uppercase tracking-widest">👁 Body Language</p>
-        {conf != null && (
-          <span className={`text-sm font-black ${conf >= 7 ? 'text-emerald-400' : conf >= 4 ? 'text-yellow-400' : 'text-red-400'}`}>
-            {parseFloat(conf).toFixed(1)}<span className="text-slate-600 text-xs font-normal">/10</span>
-          </span>
-        )}
-      </div>
-      {eye != null && (
-        <div>
-          <div className="flex justify-between text-xs mb-1">
-            <span className="text-slate-600 dark:text-slate-400">Eye Contact</span>
-            <span className={eye >= 70 ? 'text-emerald-400' : eye >= 40 ? 'text-yellow-400' : 'text-red-400'}>{eye}%</span>
-          </div>
-          <ProgressBar pct={eye} color={eye >= 70 ? 'bg-emerald-500' : eye >= 40 ? 'bg-amber-400' : 'bg-red-500'} />
-        </div>
-      )}
-      {head != null && (
-        <div>
-          <div className="flex justify-between text-xs mb-1">
-            <span className="text-slate-600 dark:text-slate-400">Head Stability</span>
-            <span className={head >= 70 ? 'text-emerald-400' : head >= 40 ? 'text-yellow-400' : 'text-red-400'}>{head}%</span>
-          </div>
-          <ProgressBar pct={head} color={head >= 70 ? 'bg-emerald-500' : head >= 40 ? 'bg-amber-400' : 'bg-red-500'} />
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Session detail (expanded) ─────────────────────────────────────────────────
-function SessionDetail({ session }) {
-  const [detail,  setDetail]  = useState(null)
-  const [loading, setLoading] = useState(true)
+function SavedSession({ session, onBack }) {
+  const [detail,    setDetail]    = useState(null)
+  const [failed,    setFailed]    = useState(false)
+  const [recording, setRecording] = useState(null)
 
   useEffect(() => {
-    fetchSessionDetail(session.id).then(d => { setDetail(d); setLoading(false) })
+    fetchSessionDetail(session.id).then(d => (d ? setDetail(d) : setFailed(true)))
+    let url = null
+    getRecording(session.id).then(blob => {
+      if (blob) { url = URL.createObjectURL(blob); setRecording(url) }
+    })
+    return () => { if (url) URL.revokeObjectURL(url) }
   }, [session.id])
 
-  if (loading) return (
-    <div className="flex justify-center py-6">
-      <div className="w-5 h-5 rounded-full border-2 border-slate-700 border-t-emerald-500 animate-spin" />
+  if (failed) return (
+    <div className="p-8 text-center space-y-4">
+      <p className="text-slate-600 dark:text-slate-400 text-sm">Could not load this session.</p>
+      <button onClick={onBack} className="text-sm font-semibold text-emerald-500">← Back to sessions</button>
     </div>
   )
-  if (!detail) return <p className="text-slate-600 text-sm py-4 text-center">Could not load details.</p>
+  if (!detail) return (
+    <div className="flex justify-center py-24">
+      <div className="w-8 h-8 rounded-full border-4 border-slate-200 dark:border-slate-800 border-t-emerald-500 animate-spin" />
+    </div>
+  )
+
+  const report  = detail.report || reportFromColumns(detail)
+  // Retries are stored per answer, apart from the report
+  const debrief = {
+    ...report.debrief,
+    answers: (report.debrief.answers || []).map((a, i) => ({
+      ...a,
+      retries: detail.answers?.find(x => x.question_index === i)?.retries || [],
+    })),
+  }
 
   return (
-    <div className="mt-4 space-y-3 border-t border-slate-200 dark:border-slate-700/40 pt-4">
-
-      {/* Meta tags */}
-      {(detail.company_name || detail.candidate_name || (detail.language && detail.language !== 'en-US')) && (
-        <div className="flex flex-wrap gap-2 text-xs">
-          {detail.candidate_name && (
-            <span className="glass border border-slate-200 dark:border-slate-700/40 rounded-full px-3 py-1 text-slate-600 dark:text-slate-400">👤 {detail.candidate_name}</span>
-          )}
-          {detail.company_name && (
-            <span className="glass border border-slate-200 dark:border-slate-700/40 rounded-full px-3 py-1 text-slate-600 dark:text-slate-400">🏢 {detail.company_name}</span>
-          )}
-          {detail.language && detail.language !== 'en-US' && (
-            <span className="glass border border-slate-200 dark:border-slate-700/40 rounded-full px-3 py-1 text-slate-600 dark:text-slate-400">
-              {langFlag(detail.language)} {detail.language}
-            </span>
-          )}
-        </div>
-      )}
-
-      {detail.summary && <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">{detail.summary}</p>}
-
-      {/* Strength / Improvement */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {detail.top_strength && (
-          <div className="bg-emerald-500/8 border border-emerald-500/20 rounded-2xl p-3">
-            <p className="text-emerald-400 text-xs font-bold mb-1">🏆 Top Strength</p>
-            <p className="text-emerald-200/80 text-xs leading-relaxed">{detail.top_strength}</p>
-          </div>
-        )}
-        {detail.top_improvement && (
-          <div className="bg-amber-500/8 border border-amber-500/20 rounded-2xl p-3">
-            <p className="text-amber-400 text-xs font-bold mb-1">🎯 Top Improvement</p>
-            <p className="text-amber-200/80 text-xs leading-relaxed">{detail.top_improvement}</p>
-          </div>
-        )}
-      </div>
-
-      {/* Face */}
-      <FacePanel session={detail} />
-
-      {/* Per-answer breakdown */}
-      {detail.answers?.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-slate-600 dark:text-slate-400 text-xs font-bold uppercase tracking-widest">Answer Breakdown</p>
-          {detail.answers.map((a, i) => {
-            const fillers = a.filler_counts
-              ? Object.entries(a.filler_counts).sort((x, y) => y[1] - x[1]).slice(0, 3)
-              : []
-            return (
-              <div key={i} className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/60 rounded-2xl p-3">
-                <div className="flex items-start gap-3">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black flex-shrink-0 ${
-                    a.score >= 8 ? 'bg-emerald-500/20 text-emerald-400' :
-                    a.score >= 5 ? 'bg-yellow-400/20 text-yellow-300' : 'bg-red-500/20 text-red-400'
-                  }`}>{a.score != null ? Math.round(a.score) : '–'}</div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-slate-600 dark:text-slate-300 text-xs font-semibold mb-1 leading-relaxed">{a.question}</p>
-                    <div className="flex flex-wrap gap-x-3 gap-y-1">
-                      {a.wpm > 0 && (
-                        <span className={`text-xs font-medium ${a.wpm >= 110 && a.wpm <= 170 ? 'text-emerald-400' : 'text-yellow-400'}`}>{a.wpm} wpm</span>
-                      )}
-                      {a.word_count > 0 && <span className="text-xs text-slate-600 dark:text-slate-400">{a.word_count} words</span>}
-                      {a.total_fillers != null && (
-                        <span className={`text-xs ${a.total_fillers === 0 ? 'text-emerald-400' : a.total_fillers <= 3 ? 'text-yellow-400' : 'text-red-400'}`}>
-                          {a.total_fillers} fillers
-                        </span>
-                      )}
-                    </div>
-                    {fillers.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-1.5">
-                        {fillers.map(([word, count]) => (
-                          <span key={word} className="text-xs bg-orange-500/10 border border-orange-500/20 text-orange-300 px-2 py-0.5 rounded-full">
-                            "{word}" ×{count}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    {[a.star_s, a.star_t, a.star_a, a.star_r].some(v => v != null) && (
-                      <div className="flex items-center gap-1 mt-1.5">
-                        <span className="text-slate-600 text-xs">STAR:</span>
-                        {[['S', a.star_s], ['T', a.star_t], ['A', a.star_a], ['R', a.star_r]].map(([l, v]) => (
-                          <span key={l} className={`text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full ${v ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-600'}`}>{l}</span>
-                        ))}
-                        {a.star_score != null && <span className="text-slate-600 text-xs ml-1">{a.star_score}/4</span>}
-                      </div>
-                    )}
-                    {a.feedback && <p className="text-slate-600 dark:text-slate-400 text-xs mt-1.5 leading-relaxed">{a.feedback}</p>}
-                  </div>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </div>
+    <Debrief
+      saved={{ id: detail.id, createdAt: detail.created_at, debrief }}
+      onBack={onBack}
+      qaPairs={report.qa_pairs || []}
+      role={detail.role}
+      difficulty={detail.difficulty}
+      interviewType={report.interview_type || detail.interview_type}
+      language={report.language || detail.language}
+      questionPlan={report.question_plan || []}
+      interviewer={report.interviewer}
+      duration={report.duration ?? detail.duration_seconds}
+      faceMetrics={report.face_metrics}
+      recording={recording}
+    />
   )
 }
 
 // ── Session card ──────────────────────────────────────────────────────────────
-function SessionCard({ session, index, onDelete }) {
-  const [open,       setOpen]       = useState(false)
+function SessionCard({ session, index, onOpen, onDelete }) {
   const [confirming, setConfirming] = useState(false)
   const [deleting,   setDeleting]   = useState(false)
   const score = session.overall_score
@@ -182,7 +99,7 @@ function SessionCard({ session, index, onDelete }) {
       style={{ animationDelay: `${index * 0.04}s` }}
     >
       <div className="flex items-center pr-3">
-      <button onClick={() => setOpen(o => !o)} className="flex-1 min-w-0 flex items-center gap-3 p-4 text-left">
+      <button onClick={onOpen} className="flex-1 min-w-0 flex items-center gap-3 p-4 text-left">
         <div className={`w-11 h-11 rounded-full flex items-center justify-center text-sm font-black flex-shrink-0 border ${scoreBg(score)}`}>
           {score != null ? parseFloat(score).toFixed(1) : '–'}
         </div>
@@ -203,7 +120,7 @@ function SessionCard({ session, index, onDelete }) {
             {flag && flag !== '🇬🇧' && <span className="text-xs">{flag}</span>}
           </div>
         </div>
-        <span className="text-slate-600 dark:text-slate-400 text-xs flex-shrink-0">{open ? '▲' : '▼'}</span>
+        <span className="text-slate-500 text-xs font-semibold flex-shrink-0">Open →</span>
       </button>
 
       {/* Delete, with a confirmation step */}
@@ -236,12 +153,6 @@ function SessionCard({ session, index, onDelete }) {
         </button>
       )}
       </div>
-
-      {open && (
-        <div className="px-4 pb-4">
-          <SessionDetail session={session} />
-        </div>
-      )}
     </div>
   )
 }
@@ -252,14 +163,20 @@ export default function Sessions({ onNavigate }) {
   const [loading,  setLoading]  = useState(true)
   const [filter,   setFilter]   = useState('All')
   const [search,   setSearch]   = useState('')
+  const [opened,   setOpened]   = useState(null)
 
   useEffect(() => {
     fetchSessions().then(data => { setSessions(data); setLoading(false) })
   }, [])
 
   const handleDelete = async (id) => {
-    if (await deleteSession(id)) setSessions(list => list.filter(s => s.id !== id))
+    if (await deleteSession(id)) {
+      deleteRecording(id)
+      setSessions(list => list.filter(s => s.id !== id))
+    }
   }
+
+  if (opened) return <SavedSession session={opened} onBack={() => setOpened(null)} />
 
   const visible = sessions
     .filter(s => filter === 'All' || s.difficulty === filter)
@@ -272,7 +189,7 @@ export default function Sessions({ onNavigate }) {
         <div className="animate-orb-r absolute bottom-0 left-0 w-80 h-80 rounded-full bg-cyan-500/5 blur-3xl" />
       </div>
 
-      <div className="relative z-10 p-6 sm:p-8 max-w-4xl mx-auto space-y-6">
+      <div className="relative z-10 p-6 sm:p-8 max-w-5xl 2xl:max-w-6xl mx-auto space-y-6">
 
         {/* Header */}
         <div>
@@ -336,7 +253,7 @@ export default function Sessions({ onNavigate }) {
               <p className="text-slate-600 dark:text-slate-400 text-sm text-center py-8">No sessions match your filter.</p>
             ) : (
               <div className="space-y-3">
-                {visible.map((s, i) => <SessionCard key={s.id} session={s} index={i} onDelete={handleDelete} />)}
+                {visible.map((s, i) => <SessionCard key={s.id} session={s} index={i} onOpen={() => setOpened(s)} onDelete={handleDelete} />)}
               </div>
             )}
           </>

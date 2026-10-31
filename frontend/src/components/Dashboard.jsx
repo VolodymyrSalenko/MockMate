@@ -354,7 +354,7 @@ export default function Dashboard({ onNavigate }) {
         <div className="animate-orb-r absolute bottom-0 left-0 w-80 h-80 rounded-full bg-cyan-500/5 blur-3xl" />
       </div>
 
-      <div className="relative z-10 p-6 sm:p-8 max-w-6xl mx-auto space-y-6">
+      <div className="relative z-10 p-6 sm:p-8 max-w-5xl 2xl:max-w-6xl mx-auto space-y-6">
 
         {/* ── Header ── */}
         <div>

@@ -444,7 +444,7 @@ export default function Landing({ onStart, user, onUpgrade }) {
     <div className="relative min-h-screen dark:bg-slate-950 flex flex-col items-center justify-center px-3 sm:px-4 py-10 overflow-hidden">
       <BgOrbs />
 
-      <div className="relative z-10 w-full max-w-xl lg:max-w-3xl 2xl:max-w-4xl">
+      <div className="relative z-10 w-full max-w-5xl 2xl:max-w-6xl sm:px-8">
 
         {/* Heading */}
         <div className="mb-6 animate-fade-up">

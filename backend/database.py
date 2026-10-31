@@ -172,11 +172,15 @@ def migrate_tables():
         "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS head_stability_pct    INTEGER",
         "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS face_confidence_score REAL",
         "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS face_samples_count    INTEGER",
+        "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS report                JSONB",
 
         # answers — filler detail, STAR count, per-answer AI score
         "ALTER TABLE answers ADD COLUMN IF NOT EXISTS filler_counts   JSONB",
         "ALTER TABLE answers ADD COLUMN IF NOT EXISTS star_score      INTEGER",
         "ALTER TABLE answers ADD COLUMN IF NOT EXISTS ai_answer_score REAL",
+
+        # answers — later attempts at the same question from the debrief
+        "ALTER TABLE answers ADD COLUMN IF NOT EXISTS retries JSONB",
 
         # users — email verification
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified     BOOLEAN DEFAULT FALSE",
@@ -242,6 +246,7 @@ def save_session(
     ai_score: float = None, ai_verdict: str = None,
     eye_contact_pct: int = None, head_stability_pct: int = None,
     face_confidence_score: float = None, face_samples_count: int = None,
+    report: dict = None,
 ) -> int:
     with db() as conn:
         with conn.cursor() as cur:
@@ -253,9 +258,9 @@ def save_session(
                     language, company_name, candidate_name,
                     ai_score, ai_verdict,
                     eye_contact_pct, head_stability_pct,
-                    face_confidence_score, face_samples_count
+                    face_confidence_score, face_samples_count, report
                 )
-                VALUES (%s,%s,%s,%s, %s,%s, %s,%s,%s, %s,%s,%s, %s,%s, %s,%s, %s,%s)
+                VALUES (%s,%s,%s,%s, %s,%s, %s,%s,%s, %s,%s,%s, %s,%s, %s,%s, %s,%s, %s)
                 RETURNING id
             """, (
                 user_id, role, difficulty, interview_type,
@@ -265,6 +270,7 @@ def save_session(
                 ai_score, ai_verdict,
                 eye_contact_pct, head_stability_pct,
                 face_confidence_score, face_samples_count,
+                json.dumps(report) if report is not None else None,
             ))
             session_id = cur.fetchone()[0]
 
@@ -330,7 +336,7 @@ def get_session_detail(session_id: int, user_id: str) -> dict | None:
                        language, company_name, candidate_name,
                        ai_score, ai_verdict,
                        eye_contact_pct, head_stability_pct,
-                       face_confidence_score, face_samples_count
+                       face_confidence_score, face_samples_count, report
                 FROM   sessions
                 WHERE  id = %s AND user_id = %s
             """, (session_id, user_id))
@@ -344,7 +350,7 @@ def get_session_detail(session_id: int, user_id: str) -> dict | None:
                        tip, ideal_answer,
                        wpm, word_count, total_fillers, duration_seconds,
                        star_s, star_t, star_a, star_r,
-                       filler_counts, star_score, ai_answer_score
+                       filler_counts, star_score, ai_answer_score, retries
                 FROM   answers
                 WHERE  session_id = %s
                 ORDER  BY question_index
@@ -352,6 +358,24 @@ def get_session_detail(session_id: int, user_id: str) -> dict | None:
             a_cols             = [d[0] for d in cur.description]
             session["answers"] = [dict(zip(a_cols, r)) for r in cur.fetchall()]
         return session
+
+
+MAX_RETRIES_PER_ANSWER = 20
+
+
+def add_answer_retry(session_id: int, user_id: str, question_index: int, retry: dict) -> bool:
+    """Append one retry attempt to an answer of the user's own session."""
+    with db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE answers a
+                SET    retries = COALESCE(a.retries, '[]'::jsonb) || %s::jsonb
+                FROM   sessions s
+                WHERE  a.session_id = s.id
+                  AND  s.id = %s AND s.user_id = %s AND a.question_index = %s
+                  AND  jsonb_array_length(COALESCE(a.retries, '[]'::jsonb)) < %s
+            """, (json.dumps([retry]), session_id, user_id, question_index, MAX_RETRIES_PER_ANSWER))
+            return cur.rowcount > 0
 
 
 def db_set_verification_token(user_id: str, token: str):

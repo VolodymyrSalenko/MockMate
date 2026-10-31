@@ -73,7 +73,7 @@ const FEATURES = [
       </svg>
     ),
     title: 'Debrief Reports',
-    desc: 'Per-question scores, written feedback, model answers, and PDF export after every session.',
+    desc: 'Per-question scores, written feedback and model answers, saved with every session.',
     pro: false,
   },
 ]
@@ -95,7 +95,6 @@ const PRO_FEATURES = [
   'Facial recognition & body language analysis',
   'Detailed feedback with ideal answers',
   'Video recording & playback',
-  'PDF export of debrief reports',
   'Priority AI responses',
 ]
 

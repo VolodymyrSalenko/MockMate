@@ -1,7 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
-import { getStoredToken } from '../context/AuthContext'
-
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
+import { startRecordingMix, stopRecordingMix } from '../utils/recordingMix'
 
 export function useMediaRecorder() {
   const recorderRef = useRef(null)
@@ -10,18 +8,6 @@ export function useMediaRecorder() {
   const [recordingUrl,   setRecordingUrl]   = useState(null)
   const [isRecording,    setIsRecording]    = useState(false)
   const [recordingError, setRecordingError] = useState('')
-
-  const uploadRecording = async (blob) => {
-    const formData = new FormData()
-    formData.append('file', blob, 'interview-recording.webm')
-    const response = await fetch(`${BACKEND_URL}/upload-recording`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${getStoredToken()}` },
-      body: formData,
-    })
-    if (!response.ok) throw new Error('Recording upload failed')
-    return response.json()
-  }
 
   const startRecording = useCallback((stream) => {
     if (!stream) {
@@ -35,24 +21,19 @@ export function useMediaRecorder() {
 
     try {
       chunksRef.current = []
-      const recorder = new MediaRecorder(stream, { mimeType: 'video/webm' })
+      // Camera video + microphone mixed with the interviewer's voice
+      const recorder = new MediaRecorder(startRecordingMix(stream), { mimeType: 'video/webm' })
 
       recorder.ondataavailable = (event) => {
         if (event.data && event.data.size > 0) chunksRef.current.push(event.data)
       }
 
-      recorder.onstop = async () => {
-        try {
-          const blob = new Blob(chunksRef.current, { type: 'video/webm' })
-          const url  = URL.createObjectURL(blob)
-          setRecordingUrl(url)
-          await uploadRecording(blob)
-          setRecordingError('')
-        } catch {
-          setRecordingError('Recording was created but could not be saved to backend.')
-        } finally {
-          setIsRecording(false)
-        }
+      // The recording stays in the browser; the debrief stores it with the saved session
+      recorder.onstop = () => {
+        stopRecordingMix()
+        const blob = new Blob(chunksRef.current, { type: 'video/webm' })
+        setRecordingUrl(URL.createObjectURL(blob))
+        setIsRecording(false)
       }
 
       recorderRef.current = recorder

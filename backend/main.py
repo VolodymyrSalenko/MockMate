@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import httpx
 from fastapi import FastAPI, HTTPException, UploadFile, File, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,7 +35,7 @@ from helpers import (
     extract_text_from_pdf,
     extract_text_from_docx,
 )
-from database import init_db, upsert_user, save_session, get_sessions, get_session_detail, save_cv_profile, get_cv_profile, delete_session, get_connection
+from database import init_db, upsert_user, save_session, get_sessions, get_session_detail, save_cv_profile, get_cv_profile, delete_session, add_answer_retry, get_connection
 from billing import router as billing_router
 from admin import router as admin_router
 from url_reader import fetch_job_page, UrlReadError
@@ -552,22 +553,7 @@ async def respond(request: Request, req: RespondRequest, current_user: dict = De
     return {"reply": reply, "done": is_last, "followup": False}
 
 
-MAX_RECORDING_SIZE = 50 * 1024 * 1024  # 50 MB
-MAX_CV_SIZE        = 10 * 1024 * 1024  # 10 MB
-
-@app.post("/upload-recording")
-async def upload_recording(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
-    recordings_dir = "recordings"
-    os.makedirs(recordings_dir, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    filename = f"mockmate-recording-{timestamp}.webm"
-    file_path = os.path.join(recordings_dir, filename)
-    content = await file.read()
-    if len(content) > MAX_RECORDING_SIZE:
-        raise HTTPException(status_code=413, detail="Recording file too large (max 50 MB)")
-    with open(file_path, "wb") as f:
-        f.write(content)
-    return {"message": "Recording saved successfully", "filename": filename, "path": file_path}
+MAX_CV_SIZE = 10 * 1024 * 1024  # 10 MB
 
 
 @app.post("/cv-profile")
@@ -816,6 +802,11 @@ class SaveSessionRequest(BaseModel):
     ai_score:         Optional[float]      = None
     ai_verdict:       Optional[str]   = Field(None, max_length=200)
     face_metrics:     Optional[FaceMetricsIn] = None
+    # The whole debrief as the client showed it, so the session can be reopened later
+    report:           Optional[dict]       = None
+
+
+MAX_REPORT_SIZE = 500 * 1024  # bytes of JSON
 
 
 @app.post("/sessions", status_code=201)
@@ -824,6 +815,9 @@ def create_session(req: SaveSessionRequest, current_user: dict = Depends(get_cur
         user_id = str(current_user["id"])
         upsert_user(user_id)
         fm = req.face_metrics or FaceMetricsIn()
+        report = req.report
+        if report is not None and len(json.dumps(report)) > MAX_REPORT_SIZE:
+            report = None  # keep the session, just without the full report
         session_id = save_session(
             user_id               = user_id,
             role                  = req.role,
@@ -844,6 +838,7 @@ def create_session(req: SaveSessionRequest, current_user: dict = Depends(get_cur
             head_stability_pct    = fm.head_stability_pct,
             face_confidence_score = fm.face_confidence_score,
             face_samples_count    = fm.face_samples_count,
+            report                = report,
         )
         return {"session_id": session_id}
     except Exception:
@@ -905,6 +900,22 @@ def session_detail(session_id: int, current_user: dict = Depends(get_current_use
         raise
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to retrieve session")
+
+
+class RetryIn(BaseModel):
+    answer:       str = Field(..., max_length=5000)
+    score:        Optional[float] = None
+    feedback:     Optional[str]   = Field(None, max_length=2000)
+    tip:          Optional[str]   = Field(None, max_length=1000)
+    ideal_answer: Optional[str]   = Field(None, max_length=2000)
+
+
+@app.post("/sessions/{session_id}/answers/{question_index}/retries", status_code=201)
+def save_retry(session_id: int, question_index: int, req: RetryIn, current_user: dict = Depends(get_current_user)):
+    retry = {**req.model_dump(), "created_at": datetime.utcnow().isoformat()}
+    if not add_answer_retry(session_id, str(current_user["id"]), question_index, retry):
+        raise HTTPException(status_code=404, detail="Answer not found")
+    return {"saved": True}
 
 
 @app.delete("/sessions/{session_id}")
