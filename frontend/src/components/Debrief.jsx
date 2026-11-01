@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { wpmColor, durationLabel } from "../utils/speechAnalytics";
 import { saveSessionToDB, saveRetry } from "../utils/api";
 import { getStoredToken } from "../context/AuthContext";
@@ -7,6 +7,7 @@ import { BACKEND_URL } from "../utils/config";
 import { getInterviewer } from "../utils/interviewers";
 import { to100 } from "../utils/scoring";
 import { saveRecording } from "../utils/recordingStore";
+import { ZONES, ISSUES, TIMELINE_STEP_MS, decodeMoment, findIssues, summarizeTimeline, clockLabel } from "../utils/bodyLanguage";
 
 function BgOrbs() {
   return (
@@ -608,11 +609,195 @@ function OverallSpeechSummary({ qaPairs, sessionDuration }) {
   );
 }
 
-function BodyLanguageCard({ metrics }) {
+// ── Recording that shows, as it plays, what the webcam analysis saw at each moment ──
+const STRIP_COLUMNS = 120;
+
+function RecordingPlayer({ src, timeline, seekTo }) {
+  const videoRef = useRef(null);
+  const wrapRef = useRef(null);
+  const [moment, setMoment] = useState(null);
+  const [progress, setProgress] = useState(0);
+  const [showLabels, setShowLabels] = useState(true);
+
+  const samples = useMemo(() => timeline?.samples || [], [timeline]);
+  const step = timeline?.step || TIMELINE_STEP_MS;
+  // MediaRecorder files often report no duration, so the timeline's own length is used
+  const total = (samples.length * step) / 1000;
+  const hasTimeline = samples.filter((s) => s != null).length >= 30;
+  const issues = useMemo(() => findIssues(timeline), [timeline]);
+
+  // The nearest analysed moment; a few are missing where a frame was skipped
+  const codeAt = useCallback((sec) => {
+    const i = Math.round((sec * 1000) / step);
+    for (let d = 0; d <= 3; d++) {
+      if (samples[i - d] != null) return samples[i - d];
+      if (samples[i + d] != null) return samples[i + d];
+    }
+    return null;
+  }, [samples, step]);
+
+  // Eye contact over about a second, so a blink or glance does not make the label flicker
+  const eyeAround = useCallback((sec) => {
+    const i = Math.round((sec * 1000) / step);
+    const near = samples.slice(Math.max(0, i - 2), i + 3).filter((s) => s != null);
+    return near.filter((s) => s & 1).length * 2 >= near.length;
+  }, [samples, step]);
+
+  // Follow the video smoothly while it plays; the labels change only when the moment does
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !hasTimeline) return;
+    let frame = 0;
+    let lastKey;
+    const tick = () => {
+      const t = video.currentTime;
+      const code = codeAt(t);
+      const eye = eyeAround(t);
+      const issue = issues.find((x) => t >= x.start && t < x.end);
+      const key = code == null ? null : `${code}-${eye}-${issue?.id}`;
+      if (key !== lastKey) {
+        lastKey = key;
+        const m = decodeMoment(code);
+        setMoment(m && { ...m, eye, issue: issue && { id: issue.id, ...ISSUES[issue.id] } });
+      }
+      const p = Math.min(1, t / total);
+      setProgress((prev) => (Math.abs(prev - p) > 0.002 ? p : prev));
+      if (!video.paused && !video.ended) frame = requestAnimationFrame(tick);
+    };
+    const start = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(tick);
+    };
+    video.addEventListener("play", start);
+    video.addEventListener("seeked", start);
+    tick();
+    return () => {
+      cancelAnimationFrame(frame);
+      video.removeEventListener("play", start);
+      video.removeEventListener("seeked", start);
+    };
+  }, [src, hasTimeline, codeAt, eyeAround, issues, total]);
+
+  // A time clicked in the body language card: show the player and play from there
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!seekTo || !video) return;
+    wrapRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    video.currentTime = Math.max(0, seekTo.sec - 0.5);
+    video.play().catch(() => {});
+  }, [seekTo]);
+
+  // Columns of the strip under the video: expression zone, eye contact, red moments
+  const columns = useMemo(() => {
+    if (!hasTimeline) return [];
+    const per = samples.length / STRIP_COLUMNS;
+    const colSec = total / STRIP_COLUMNS;
+    return Array.from({ length: STRIP_COLUMNS }, (_, c) => {
+      const moments = samples
+        .slice(Math.floor(c * per), Math.floor((c + 1) * per))
+        .map(decodeMoment)
+        .filter(Boolean);
+      if (!moments.length) return null;
+      const from = c * colSec, to = from + colSec;
+      return {
+        eye: moments.filter((m) => m.eye).length / moments.length >= 0.5,
+        yellow: moments.filter((m) => m.expression.zone === "yellow").length / moments.length >= 0.3,
+        red: issues.some((x) => x.start < to && x.end > from),
+      };
+    });
+  }, [samples, hasTimeline, issues, total]);
+
+  const seek = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const video = videoRef.current;
+    if (video) video.currentTime = ((e.clientX - rect.left) / rect.width) * total;
+  };
+
+  const badge = "text-white text-xs font-bold px-2 py-0.5 rounded-full backdrop-blur-sm shadow";
+  const rows = [
+    { label: "Expression", color: (c) => (c.yellow ? ZONES.yellow.strip : ZONES.green.strip) },
+    { label: "Eye contact", color: (c) => (c.eye ? ZONES.green.strip : "bg-slate-400 dark:bg-slate-600") },
+    { label: "To work on", color: (c) => (c.red ? ZONES.red.strip : "") },
+  ];
+  const legend = [
+    [ZONES.green.strip, "Good"],
+    [ZONES.yellow.strip, "Serious / surprised"],
+    ["bg-slate-400 dark:bg-slate-600", "Looking away"],
+    [ZONES.red.strip, "Worth working on"],
+  ];
+
+  return (
+    <div className="space-y-3" ref={wrapRef}>
+      <div className="relative">
+        <video ref={videoRef} src={src} controls className="w-full rounded-2xl border border-slate-700/50 bg-black" />
+        {hasTimeline && showLabels && moment && (
+          // One line: eye contact, expression, then a gesture or the red moment worth working on
+          <div className="absolute top-2.5 inset-x-2.5 flex flex-wrap gap-1 pointer-events-none">
+            {moment.issue?.id === "look-away" ? (
+              <span className={`${badge} ${ZONES.red.badge}`}>⚠ Looking away</span>
+            ) : (
+              <span className={`${badge} ${moment.eye ? ZONES.green.badge : "bg-slate-700/85"}`}>
+                {moment.eye ? "👁 Eye contact" : "👀 Looking away"}
+              </span>
+            )}
+            <span className={`${badge} ${ZONES[moment.expression.zone].badge}`}>{moment.expression.icon} {moment.expression.label}</span>
+            {moment.gesture && !moment.issue && (
+              <span className={`${badge} ${ZONES[moment.gesture.zone].badge}`}>{moment.gesture.icon} {moment.gesture.label}</span>
+            )}
+            {moment.issue && moment.issue.id !== "look-away" && (
+              <span className={`${badge} ${ZONES.red.badge}`}>⚠ {moment.issue.short}</span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {hasTimeline && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">Timeline · click to jump</p>
+            <button
+              onClick={() => setShowLabels((v) => !v)}
+              className="text-xs font-semibold text-emerald-500 hover:text-emerald-400"
+            >
+              {showLabels ? "Hide labels" : "Show labels"}
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <div className="flex flex-col justify-between text-[10px] leading-3 text-slate-500 w-16 flex-shrink-0">
+              {rows.map((r) => <span key={r.label}>{r.label}</span>)}
+            </div>
+            <div onClick={seek} className="relative flex-1 cursor-pointer select-none space-y-1" title="Click to jump to this moment">
+              {rows.map((r) => (
+                <div key={r.label} className="flex h-2.5 rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800/60">
+                  {columns.map((c, i) => <div key={i} className={`flex-1 ${c ? r.color(c) : ""}`} />)}
+                </div>
+              ))}
+              <div
+                className="absolute -top-1 -bottom-1 w-0.5 bg-slate-900 dark:bg-white rounded-full pointer-events-none"
+                style={{ left: `${progress * 100}%` }}
+              />
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
+            {legend.map(([color, label]) => (
+              <span key={label}>
+                <span className={`inline-block w-2.5 h-2.5 rounded-sm align-middle mr-1 ${color}`} />
+                {label}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BodyLanguageCard({ metrics, onSeek }) {
   if (!metrics || metrics.samplesCount < 30) return null;
 
   const eyePct = metrics.eyeContactPct;
   const headPct = metrics.headStabilityPct;
+  const summary = summarizeTimeline(metrics.timeline);
 
   const eyeColor =
     eyePct >= 70
@@ -631,7 +816,9 @@ function BodyLanguageCard({ metrics }) {
       ? `Try to keep your eyes on the camera — you maintained eye contact only ${eyePct}% of the time.`
       : headPct < 50
         ? `Work on keeping your head still and upright — steady posture reads as more confident.`
-        : `Strong body language overall — consistent eye contact and stable posture.`;
+        : summary?.issues.length
+          ? `Good eye contact and posture overall — review the moments below to polish your delivery.`
+          : `Strong body language overall — consistent eye contact and stable posture.`;
 
   return (
     <div className="glass border border-slate-200 dark:border-slate-700/40 rounded-3xl p-5 space-y-4">
@@ -659,6 +846,53 @@ function BodyLanguageCard({ metrics }) {
           </div>
         </div>
       </div>
+      {summary && (
+        <div className="flex flex-wrap gap-1.5">
+          {summary.expressions.map((x) => (
+            <span key={x.id} className="text-xs font-semibold px-2 py-1 rounded-full bg-slate-100 dark:bg-slate-800/70 text-slate-700 dark:text-slate-300">
+              <span className={`inline-block w-1.5 h-1.5 rounded-full align-middle mr-1 ${ZONES[x.zone].strip}`} />
+              {x.icon} {x.label} {x.pct}%
+            </span>
+          ))}
+          {summary.nods > 0 && (
+            <span className="text-xs font-semibold px-2 py-1 rounded-full bg-slate-100 dark:bg-slate-800/70 text-slate-700 dark:text-slate-300">
+              <span className={`inline-block w-1.5 h-1.5 rounded-full align-middle mr-1 ${ZONES.green.strip}`} />
+              👍 Nodded {summary.nods}×
+            </span>
+          )}
+        </div>
+      )}
+      {summary?.issues.length > 0 && (
+        <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-3 space-y-2">
+          <p className="text-sm font-bold text-red-500">⚠ To work on</p>
+          {summary.issues.map((x) => (
+            <div key={x.id} className="text-sm">
+              <p className="text-slate-700 dark:text-slate-300 font-semibold">
+                {x.icon} {x.label} <span className="text-slate-500 font-normal">· {x.times.length}×</span>
+              </p>
+              <div className="flex flex-wrap gap-1 mt-1">
+                {x.times.slice(0, 8).map((t) =>
+                  onSeek ? (
+                    <button
+                      key={t}
+                      onClick={() => onSeek(t)}
+                      className="text-xs font-mono px-1.5 py-0.5 rounded-md bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors"
+                      title="Watch this moment"
+                    >
+                      ▶ {clockLabel(t)}
+                    </button>
+                  ) : (
+                    <span key={t} className="text-xs font-mono px-1.5 py-0.5 rounded-md bg-red-500/10 text-red-500">
+                      {clockLabel(t)}
+                    </span>
+                  )
+                )}
+                {x.times.length > 8 && <span className="text-xs text-slate-500">+{x.times.length - 8} more</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed border-t border-slate-200 dark:border-slate-700/40 pt-3">{tip}</p>
     </div>
   );
@@ -685,6 +919,8 @@ export default function Debrief({
   const [debrief, setDebrief] = useState(saved?.debrief || null);
   const [loading, setLoading] = useState(!saved);
   const [error, setError] = useState("");
+  // A moment picked in the body language card, played in the recording
+  const [seekTo, setSeekTo] = useState(null);
   const [retryQ, setRetryQ] = useState(null);
   const [openIndex, setOpenIndex] = useState(null);
   const interviewerName = getInterviewer(interviewer).name;
@@ -911,7 +1147,7 @@ export default function Debrief({
         {hasDelivery && (
           <DeliveryPanel>
             <OverallSpeechSummary qaPairs={qaPairs} sessionDuration={duration} />
-            <BodyLanguageCard metrics={faceMetrics} />
+            <BodyLanguageCard metrics={faceMetrics} onSeek={recording ? (sec) => setSeekTo({ sec }) : null} />
             {saved && !recording && (
               <p className="text-xs text-slate-500 leading-relaxed px-1">
                 🎥 No recording in this browser: videos are kept only on the device where you did the interview.
@@ -924,15 +1160,11 @@ export default function Debrief({
                     🎥 Interview Recording
                   </p>
                   <p className="text-slate-600 dark:text-slate-400 text-sm mt-1">
-                    Review your webcam recording from this interview session.
+                    Watch it back with what the camera noticed: eye contact, expressions, and moments worth working on.
                   </p>
                 </div>
 
-                <video
-                  src={recording}
-                  controls
-                  className="w-full rounded-2xl border border-slate-700/50 bg-black"
-                />
+                <RecordingPlayer src={recording} timeline={faceMetrics?.timeline} seekTo={seekTo} />
 
                 <a
                   href={recording}
