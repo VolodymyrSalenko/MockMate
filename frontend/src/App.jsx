@@ -59,6 +59,8 @@ function AppInner() {
   const { user, loading, refreshUser } = useAuth()
 
   const [view,             setView]             = useState('landing')
+  // A session picked on the dashboard chart, opened on the Sessions page
+  const [openSessionId,    setOpenSessionId]    = useState(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [showProModal,     setShowProModal]     = useState(false)
   const [showAuth,         setShowAuth]         = useState(
@@ -269,8 +271,8 @@ function AppInner() {
       <main className={`flex-1 min-h-screen transition-all duration-300 ${
         sidebarViews.includes(view) ? (sidebarCollapsed ? 'ml-16' : 'ml-60') : ''
       }`}>
-        {view === 'dashboard' && <Dashboard  onNavigate={setView} />}
-        {view === 'sessions'  && <Sessions   onNavigate={setView} />}
+        {view === 'dashboard' && <Dashboard  onNavigate={setView} onOpenSession={(id) => { setOpenSessionId(id); setView('sessions') }} />}
+        {view === 'sessions'  && <Sessions   onNavigate={setView} openId={openSessionId} onOpened={() => setOpenSessionId(null)} />}
         {view === 'settings'  && <Settings initialTab={settingsTab} />}
         {view === 'admin'     && user?.is_admin && <AdminPanel />}
         {view === 'cv'        && <CVProfile user={user} onUpgrade={() => setShowProModal(true)} />}

@@ -914,6 +914,7 @@ export default function Debrief({
   // A session reopened from Sessions: { id, createdAt, debrief }. Nothing is regenerated.
   saved = null,
   onBack,
+  backLabel,
 }) {
   const [debrief, setDebrief] = useState(saved?.debrief || null);
   const [loading, setLoading] = useState(!saved);
@@ -1055,7 +1056,7 @@ export default function Debrief({
             onClick={onBack || onRetry}
             className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-bold px-8 py-3 rounded-2xl transition-all hover:scale-105 shadow-lg shadow-emerald-500/30"
           >
-            {onBack ? "← Back to sessions" : "← Back to dashboard"}
+            {backLabel || (onBack ? "← Back to sessions" : "← Back to dashboard")}
           </button>
         </div>
       </div>
@@ -1075,7 +1076,7 @@ export default function Debrief({
             onClick={onBack}
             className="text-sm font-semibold text-slate-500 hover:text-emerald-500 transition-colors"
           >
-            ← Back to sessions
+            {backLabel || "← Back to sessions"}
           </button>
         )}
         <div className="text-center animate-fade-up">
@@ -1154,7 +1155,7 @@ export default function Debrief({
           onClick={onBack || onRetry}
           className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-bold px-10 py-3.5 rounded-2xl transition-all hover:scale-105 shadow-xl shadow-emerald-500/30 hover:shadow-emerald-500/50"
         >
-          {onBack ? "← Back to sessions" : "← Back to dashboard"}
+          {backLabel || (onBack ? "← Back to sessions" : "← Back to dashboard")}
         </button>
       </div>
 

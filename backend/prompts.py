@@ -74,49 +74,8 @@ INTERVIEW_TYPE_PROMPTS = {
     "full":        "Generate exactly {n} question(s). Start with a warmup question — 'Tell me about yourself and your background.' or a natural variant. Then mix a follow-up on the candidate's most recent or most relevant experience, behavioral STAR questions ('Tell me about a time when...') and technical questions based on the top skills, in roughly equal parts. If there are 4 or more questions, end with one motivation question about why they want this role. Keep every question one concise, direct sentence — no multi-part questions.",
     "behavioral":  "Generate exactly {n} behavioral STAR question(s) ONLY. Each must ask about a specific past situation ('Tell me about a time when...', 'Describe a situation where...'). No technical questions.",
     "technical":   "Generate exactly {n} technical question(s) ONLY, progressively harder. Focus on the top skills from the job description. Include at least one system design or architecture question if the interview level is Senior.",
-    "screening":   "Generate exactly {n} easy screening question(s), chosen in this order of priority: background intro, motivation for applying, key skills overview, availability/work style, simple technical questions. Keep them brief and conversational.",
 }
 
-QUESTION_BANK_PROMPT = """You are generating {question_count} targeted interview practice question(s).
-
-{language_instruction}
-
-Category: {category}
-Difficulty: {difficulty}
-
-{difficulty_context}
-
-Generate exactly {question_count} interview question(s) for this category. Make them progressively challenging. Return ONLY this JSON (no preamble, no markdown, no backticks):
-{{
-  "role": "{category} Practice",
-  "candidate_name": "Candidate",
-  "seniority": "{difficulty}",
-  "intro_message": "A warm 4-sentence intro from {interviewer_name}: greet candidate, say you're {interviewer_name}, mention this is {category} practice at {difficulty} level, mention {question_count} question(s), then ask the first question verbatim.",
-  "questions": [
-    {{
-      "question": "the question the interviewer asks out loud",
-      "competency": "what this question tests, 2-6 words",
-      "strong_answer": "one sentence: what a strong answer must contain at this level",
-      "red_flags": "one sentence: what a weak answer looks like"
-    }}
-  ]
-}}
-
-"competency", "strong_answer" and "red_flags" are hidden notes for the evaluator; write them in English. Only "question" and "intro_message" follow the language instruction above.
-
-Category guidelines:
-- Behavioral/STAR: Situational questions starting with 'Tell me about a time...' or 'Describe a situation...'
-- System Design: Architecture, scalability, trade-offs, real-world design challenges
-- React/Frontend: Hooks, state, performance, component patterns, accessibility
-- Node.js/Backend: APIs, async, databases, authentication, scalability
-- Python: Data structures, OOP, async, common libraries, best practices
-- SQL/Databases: Queries, joins, indexing, normalization, optimization
-- Leadership: Team management, conflict resolution, mentoring, decision-making
-- Product Thinking: Prioritization, metrics, user empathy, trade-offs
-- DevOps/Cloud: CI/CD, containers, infrastructure, monitoring, reliability
-- Machine Learning: Algorithms, feature engineering, model evaluation, MLOps
-- Data Structures & Algorithms: Classic DSA problems, complexity analysis, problem-solving
-- Communication: Stakeholder management, presenting ideas, cross-functional work"""
 
 CV_PARSE_PROMPT = """You are a CV/resume parser. Extract structured information from the following CV text.
 
@@ -247,6 +206,32 @@ Ask a follow-up only if something important is clearly missing: no concrete exam
 - If you move on: {move_on}
 
 Return ONLY this JSON: {{"followup": true or false, "reply": "what the interviewer says out loud"}}"""
+
+# Filled with str.replace(): the interview data is JSON with braces
+INSIGHTS_PROMPT = """You are an interview coach reviewing a candidate's practice dashboard: the mock interviews it currently shows (after the candidate's filters), oldest first. The dashboard charts the score per interview and two skill radars. Write a short, honest and encouraging review of what the dashboard shows, to help them decide what to practise next.
+
+Each interview has: date, role, level (Junior/Mid/Senior), type, language, overall score (1-10), answer criteria (relevance, examples, clarity 1-10; structure = STAR coverage 0-100), delivery (words per minute, filler words per minute), body language (eye contact %, head stability %, focus = eye contact while answering %, calm = time without restless movement %, smile = time smiling %, presence = overall impression 0-100 from facial expression and moments worth working on), the strongest point and the main improvement noted in that interview's feedback, and whether an interviewer would invite them to the next round.
+
+The radars use these names; use them too: Answer Skills = Relevance, Examples, Clarity, Structure, Fluency (speaking pace plus filler words); Body Language = Eye Contact, Focus, Stability, Calm, Presence.
+
+Rules:
+- Base every statement on the data. Mention concrete numbers and trends ("clarity went from 3 to 7 over the last four interviews"). Never invent facts.
+- Very short interviews with a score of 1-2 are usually quick tests; do not dwell on them, and say so if they pull the average down.
+- Judge against the level the candidate practised. Speaking pace is good at 110-170 words a minute.
+- Address the candidate as "you". Plain English, short sentences. Never write scores as "6/10"; use the 0-100 scale (multiply 1-10 scores by 10).
+
+Return ONLY this JSON (no preamble, no markdown, no backticks):
+{
+  "headline": "one sentence: the big picture of their progress",
+  "trend": "up" or "flat" or "down" or "unclear",
+  "strengths": ["2 short points: what is going well, with numbers"],
+  "focus": [{"area": "2-4 words", "why": "one sentence with the evidence", "how": "one concrete thing to do in the next interview"}],
+  "next_step": "one sentence: what kind of interview to practise next and why"
+}
+"focus" has 2 or 3 items, the most important first.
+
+Interviews:
+{sessions}"""
 
 CV_ANALYSIS_PROMPT = """You are a professional career coach and ATS (Applicant Tracking System) expert. Analyse the following CV and return ONLY a valid JSON object — no preamble, no markdown, no backticks.
 

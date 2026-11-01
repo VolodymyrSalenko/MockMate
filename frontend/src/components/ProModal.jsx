@@ -4,7 +4,7 @@ import { BACKEND_URL } from '../utils/config'
 
 export const FEATURES = [
   { label: 'Practice sessions per day',   free: '3',          pro: 'Unlimited' },
-  { label: 'Interview modes',             free: '3 modes',    pro: 'All 5 modes' },
+  { label: 'Interview modes',             free: '2 modes',    pro: 'All 3 modes' },
   { label: 'AI scoring & feedback',       free: true,         pro: true },
   { label: 'Speech analytics',           free: true,         pro: true },
   { label: 'Feedback reports',           free: true,         pro: true },

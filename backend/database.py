@@ -4,6 +4,7 @@ import json
 import os
 import psycopg
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -315,6 +316,15 @@ def save_session(
         return session_id
 
 
+def _with_utc(row: dict) -> dict:
+    """Timestamps are stored in UTC without a zone; mark them as UTC so the browser
+    shows them in the user's own time instead of treating them as local."""
+    for key, value in row.items():
+        if isinstance(value, datetime) and value.tzinfo is None:
+            row[key] = value.replace(tzinfo=timezone.utc)
+    return row
+
+
 def _avg(values):
     values = [v for v in values if isinstance(v, (int, float))]
     return round(sum(values) / len(values), 1) if values else None
@@ -336,6 +346,90 @@ def report_skills(report) -> dict | None:
     }
 
 
+# Body-language timeline codes (frontend/src/utils/bodyLanguage.js): bit 0 eye contact,
+# bit 1 facing the camera, bits 2-4 expression (0 neutral, 1 smiling), bit 7 answering, bit 8 restless
+_EYE, _STEADY, _ANSWERING, _RESTLESS = 1, 2, 128, 256
+_NEUTRAL, _SMILING = 0, 1
+_STEP_SECONDS = 0.2
+
+
+def _red_moments(samples: list) -> set:
+    """Indexes of the moments in the red zone, with the rules of the feedback screen
+    (bodyLanguage.js ISSUES): looking away 3 s+ or turning away 2 s+ while answering,
+    restless movement 1.5 s+. Short gaps do not end a moment."""
+    rules = [
+        (lambda c: c & _ANSWERING and not c & _EYE,    3.0, 0.6),
+        (lambda c: c & _ANSWERING and not c & _STEADY, 2.0, 0.6),
+        (lambda c: c & _RESTLESS,                      1.5, 1.0),
+    ]
+    red = set()
+    for test, min_sec, gap_sec in rules:
+        runs, run = [], None
+        for i, c in enumerate(samples):
+            if not isinstance(c, int) or not test(c):
+                continue
+            if run and (i - run[-1]) * _STEP_SECONDS <= gap_sec + _STEP_SECONDS:
+                run.append(i)
+            else:
+                run = [i]
+                runs.append(run)
+        for r in runs:
+            if (r[-1] - r[0] + 1) * _STEP_SECONDS >= min_sec:
+                red.update(range(r[0], r[-1] + 1))
+    return red
+
+
+def report_video(report) -> dict | None:
+    """Per-session body language from the saved timeline, each 0-100: eye contact while
+    answering (focus), time without restless movement (calm), time smiling (smile), and
+    presence: the overall impression, from a friendly or neutral face (a little extra for
+    smiling) minus the moments in the red zone."""
+    timeline = (((report or {}).get("face_metrics") or {}).get("timeline") or {})
+    samples = timeline.get("samples") or []
+    moments = [c for c in samples if isinstance(c, int)]
+    if len(moments) < 30:
+        return None
+    answering = [c for c in moments if c & _ANSWERING]
+    pct = lambda part, whole: round(100 * part / len(whole)) if whole else None
+    friendly = 100 * sum(1 for c in moments if (c >> 2) & 7 in (_NEUTRAL, _SMILING)) / len(moments)
+    smile = 100 * sum(1 for c in moments if (c >> 2) & 7 == _SMILING) / len(moments)
+    red = 100 * len(_red_moments(samples)) / len(moments)
+    return {
+        "focus":    pct(sum(1 for c in answering if c & _EYE), answering),
+        "calm":     pct(sum(1 for c in moments if not c & _RESTLESS), moments),
+        "smile":    round(smile),
+        "presence": max(0, min(100, round(friendly + min(5, smile / 2) - 2 * red))),
+    }
+
+
+def _session_delivery(cur, session_ids: list) -> dict:
+    """Speaking pace, filler words per minute and filler counts per session, from its answers."""
+    if not session_ids:
+        return {}
+    cur.execute("""
+        SELECT session_id, wpm, total_fillers, duration_seconds, filler_counts
+        FROM   answers
+        WHERE  session_id = ANY(%s)
+    """, (session_ids,))
+    acc = {}
+    for sid, wpm, fillers, seconds, counts in cur.fetchall():
+        a = acc.setdefault(sid, {"wpm": [], "fillers": 0, "seconds": 0, "counts": {}})
+        if wpm:
+            a["wpm"].append(wpm)
+        a["fillers"] += fillers or 0
+        a["seconds"] += seconds or 0
+        for word, n in (counts if isinstance(counts, dict) else {}).items():
+            a["counts"][word] = a["counts"].get(word, 0) + int(n)
+    return {
+        sid: {
+            "wpm": round(sum(a["wpm"]) / len(a["wpm"])) if a["wpm"] else None,
+            "fillers_per_min": round(a["fillers"] / (a["seconds"] / 60), 1) if a["seconds"] >= 10 else None,
+            "filler_counts": a["counts"],
+        }
+        for sid, a in acc.items()
+    }
+
+
 def get_sessions(user_id: str) -> list:
     with db() as conn:
         with conn.cursor() as cur:
@@ -351,10 +445,46 @@ def get_sessions(user_id: str) -> list:
                 ORDER  BY created_at DESC
             """, (user_id,))
             cols = [d[0] for d in cur.description]
-            sessions = [dict(zip(cols, row)) for row in cur.fetchall()]
+            sessions = [_with_utc(dict(zip(cols, row))) for row in cur.fetchall()]
+            delivery = _session_delivery(cur, [s["id"] for s in sessions])
     for s in sessions:
-        s["skills"] = report_skills(s.pop("report"))
+        report = s.pop("report")
+        s["skills"] = report_skills(report)
+        s["video"] = report_video(report)
+        s["delivery"] = delivery.get(s["id"])
     return sessions
+
+
+def get_sessions_for_insights(user_id: str, session_ids: list) -> list:
+    """The user's chosen interviews with everything the progress review needs, oldest first."""
+    with db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, created_at, role, difficulty, interview_type, language,
+                       overall_score, eye_contact_pct, head_stability_pct, duration_seconds, report
+                FROM   sessions
+                WHERE  user_id = %s AND id = ANY(%s)
+                ORDER  BY created_at
+            """, (user_id, session_ids))
+            cols = [d[0] for d in cur.description]
+            sessions = [dict(zip(cols, row)) for row in cur.fetchall()]
+            delivery = _session_delivery(cur, [s["id"] for s in sessions])
+    out = []
+    for s in sessions:
+        report = s.pop("report") or {}
+        debrief = report.get("debrief") or {}
+        out.append({
+            **s,
+            "skills": report_skills(report),
+            "video": report_video(report),
+            "delivery": {k: v for k, v in (delivery.get(s["id"]) or {}).items() if k != "filler_counts"},
+            "fillers": (delivery.get(s["id"]) or {}).get("filler_counts") or {},
+            "top_strength": debrief.get("top_strength"),
+            "top_improvement": debrief.get("top_improvement"),
+            "hiring_decision": (debrief.get("hiring_decision") or {}).get("decision"),
+            "questions": len(debrief.get("answers") or []),
+        })
+    return out
 
 
 MAX_JOB_DESCRIPTIONS = 20  # per user; the least recently used ones are dropped
@@ -392,7 +522,7 @@ def get_job_descriptions(user_id: str) -> list:
                 ORDER  BY last_used_at DESC
             """, (user_id,))
             cols = [d[0] for d in cur.description]
-            return [dict(zip(cols, row)) for row in cur.fetchall()]
+            return [_with_utc(dict(zip(cols, row))) for row in cur.fetchall()]
 
 
 def delete_job_description(jd_id: int, user_id: str) -> bool:
@@ -429,7 +559,7 @@ def get_session_detail(session_id: int, user_id: str) -> dict | None:
             row = cur.fetchone()
             if not row:
                 return None
-            session = dict(zip([d[0] for d in cur.description], row))
+            session = _with_utc(dict(zip([d[0] for d in cur.description], row)))
 
             cur.execute("""
                 SELECT question_index, question, answer, score, feedback,
