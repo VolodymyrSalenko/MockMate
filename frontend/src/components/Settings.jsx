@@ -196,7 +196,7 @@ function ScoreBar({ score, max = 10, color = 'bg-emerald-500' }) {
 const PRO_PERKS = FEATURES.filter(f => f.free !== f.pro)
   .map(f => (typeof f.pro === 'string' ? `${f.label}: ${f.pro}` : f.label))
 
-function PlanCard({ isPro }) {
+function PlanCard({ isPro, usage }) {
   const [showUpgrade, setShowUpgrade] = useState(false)
   return (
     <div className={`rounded-2xl p-6 border ${
@@ -212,6 +212,12 @@ function PlanCard({ isPro }) {
           <p className="text-xl font-black text-slate-900 dark:text-white mt-1">
             {isPro ? '⭐ MockMate Pro' : 'Free'}
           </p>
+          {usage && (
+            <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 mt-1">
+              {usage.remaining} of {usage.limit} interviews left this month
+              {usage.resets_at && <span className="font-normal text-slate-500"> · renews {new Date(usage.resets_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>}
+            </p>
+          )}
           <p className="text-sm text-slate-600 dark:text-slate-400 mt-0.5">
             {isPro ? 'Everything is unlocked. Here is what your plan includes:' : 'Upgrade to Pro to unlock:'}
           </p>
@@ -574,7 +580,7 @@ export default function Settings({ initialTab = 'profile' }) {
               {nameMsg && <div className="mt-3"><Toast type={nameMsg.type} message={nameMsg.text} onDismiss={() => setNameMsg(null)} /></div>}
             </div>
 
-            <PlanCard isPro={isPro} />
+            <PlanCard isPro={isPro} usage={user?.usage} />
           </div>
         )}
 

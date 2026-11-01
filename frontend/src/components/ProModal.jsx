@@ -1,17 +1,10 @@
 import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { BACKEND_URL } from '../utils/config'
+import { PLAN_ROWS, PRO_PRICE } from '../utils/plan'
 
-export const FEATURES = [
-  { label: 'Practice sessions per day',   free: '3',          pro: 'Unlimited' },
-  { label: 'Interview modes',             free: '2 modes',    pro: 'All 3 modes' },
-  { label: 'AI scoring & feedback',       free: true,         pro: true },
-  { label: 'Speech analytics',           free: true,         pro: true },
-  { label: 'Feedback reports',           free: true,         pro: true },
-  { label: 'Job description upload',     free: false,        pro: true },
-  { label: 'Body language analysis',     free: false,        pro: true },
-  { label: 'Video recording & playback', free: false,        pro: true },
-]
+// The same Free / Pro comparison as Settings and the homepage
+export const FEATURES = PLAN_ROWS
 
 function FeatureValue({ v }) {
   if (v === true)  return <span className="text-emerald-500 dark:text-emerald-400 text-base">✓</span>
@@ -23,6 +16,7 @@ export default function ProModal({ onClose }) {
   const { token } = useAuth()
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState(null)
+  const [notLive, setNotLive] = useState(false)   // online payment is not switched on yet
 
   const handleUpgrade = async () => {
     setLoading(true)
@@ -32,6 +26,7 @@ export default function ProModal({ onClose }) {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       })
+      if (res.status === 422) { setNotLive(true); setLoading(false); return }
       if (!res.ok) throw new Error('Could not start checkout')
       const { url } = await res.json()
       window.location.href = url
@@ -71,10 +66,10 @@ export default function ProModal({ onClose }) {
 
           {/* Price */}
           <div className="mt-4 flex items-baseline justify-center gap-1">
-            <span className="text-4xl font-black text-slate-900 dark:text-white">$9</span>
+            <span className="text-4xl font-black text-slate-900 dark:text-white">{PRO_PRICE}</span>
             <span className="text-slate-400 dark:text-slate-500 text-sm font-medium">/ month</span>
           </div>
-          <p className="text-slate-400 dark:text-slate-600 text-xs mt-1">Cancel any time · No hidden fees</p>
+          <p className="text-slate-400 dark:text-slate-600 text-xs mt-1">30 interviews a month · Cancel any time</p>
         </div>
 
         {/* Feature table */}
@@ -102,6 +97,12 @@ export default function ProModal({ onClose }) {
         <div className="px-8 pb-8 space-y-3">
           {error && (
             <p className="text-center text-red-600 dark:text-red-400 text-xs">{error}</p>
+          )}
+          {notLive && (
+            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-center">
+              <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">Online payment is coming soon</p>
+              <p className="text-xs text-amber-700/80 dark:text-amber-300/80 mt-0.5">For now the MockMate team switches Pro on for you. Ask us and we will activate it.</p>
+            </div>
           )}
           <button
             onClick={handleUpgrade}

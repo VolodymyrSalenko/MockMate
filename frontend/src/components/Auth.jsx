@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useAuth } from '../context/AuthContext'
+import { useAuth, getStoredToken } from '../context/AuthContext'
 import { IconMail, IconCheckCircle, IconXCircle } from '../utils/icons'
 import { BACKEND_URL } from '../utils/config'
 
@@ -33,7 +33,7 @@ const CARD_STYLE = {
 }
 
 export default function Auth({ defaultMode = 'login' }) {
-  const { login } = useAuth()
+  const { login, logout } = useAuth()
   const [mode,            setMode]            = useState(defaultMode)
   const [name,            setName]            = useState('')
   const [email,           setEmail]           = useState('')
@@ -115,15 +115,22 @@ export default function Auth({ defaultMode = 'login' }) {
     setLoading(true)
     const endpoint = mode === 'register' ? '/auth/register' : '/auth/login'
     const body     = mode === 'register' ? { email, password, name } : { email, password }
+    // A guest's token goes along, so their trial interview stays with the account
+    const guestToken = getStoredToken()
     try {
       const res  = await fetch(`${BACKEND_URL}${endpoint}`, {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(guestToken ? { Authorization: `Bearer ${guestToken}` } : {}) },
         body:    JSON.stringify(body),
       })
       const data = await res.json()
       if (!res.ok) { setError(data.detail || 'Something went wrong.'); return }
-      if (data.needs_verification) { setVerifyPending(data.email); return }
+      if (data.needs_verification) {
+        setVerifyPending(data.email)
+        // The guest is now an account waiting for its email to be confirmed: sign out until then
+        if (guestToken) logout()
+        return
+      }
       login(data.token, data.user)
     } catch {
       setError('Could not connect to the server. Is the backend running?')
@@ -367,7 +374,7 @@ export default function Auth({ defaultMode = 'login' }) {
               <label className="text-slate-600 dark:text-slate-300 text-sm font-semibold">
                 Password
                 {mode === 'register' && (
-                  <span className="ml-2 text-slate-400 dark:text-slate-500 font-normal text-xs">min. 6 characters</span>
+                  <span className="ml-2 text-slate-400 dark:text-slate-500 font-normal text-xs">min. 8 characters</span>
                 )}
               </label>
               {mode === 'login' && (

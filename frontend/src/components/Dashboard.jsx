@@ -13,6 +13,7 @@ import {
 } from '../utils/scoring'
 import { IconList, IconStar, IconTrophy, IconFlame, IconMic } from '../utils/icons'
 import { FilterBar, applyFilters, useSessionFilters, isFiltered, TYPE_LABELS } from './SessionFilters'
+import { hasFeature, openUpgrade } from '../utils/plan'
 
 // ── Practice streak ───────────────────────────────────────────────────────────
 function calcStreak(sessions) {
@@ -221,6 +222,22 @@ const TREND = {
   flat:    { text: 'Steady',    cls: 'text-amber-500 bg-amber-500/10 border-amber-500/30',       icon: '→' },
   down:    { text: 'Slipping',  cls: 'text-red-500 bg-red-500/10 border-red-500/30',             icon: '↘' },
   unclear: { text: 'Too early to tell', cls: 'text-slate-500 bg-slate-500/10 border-slate-500/30', icon: '·' },
+}
+
+function CoachLocked() {
+  return (
+    <div className="glass border border-slate-200 dark:border-slate-700/40 rounded-2xl p-6 flex flex-wrap items-center justify-between gap-4">
+      <div>
+        <p className="text-slate-900 dark:text-white font-bold">🧭 Coach's Review <span className="ml-1 text-[10px] font-black bg-amber-500 text-white rounded-full px-1.5 py-0.5 align-middle">PRO</span></p>
+        <p className="text-slate-600 dark:text-slate-400 text-sm mt-1 max-w-xl">
+          An AI coach reads this whole dashboard and tells you how you are progressing, what is working and what to practise next.
+        </p>
+      </div>
+      <button onClick={openUpgrade} className="text-sm font-bold text-white bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2 rounded-xl hover:scale-105 transition-all shadow-md shadow-amber-500/30">
+        Unlock with Pro
+      </button>
+    </div>
+  )
 }
 
 // Written for all interviews on its own; after a filter change it waits for "Update review",
@@ -464,7 +481,9 @@ export default function Dashboard({ onNavigate, onOpenSession }) {
                   <RadarCard title="Body Language" subtitle="Measured by the webcam during the interview" axes={VIDEO_AXES} sessions={shown} />
                 </div>
 
-                <InsightsCard sessions={shown} filtered={isFiltered(filters)} onNavigate={onNavigate} />
+                {hasFeature(user, 'coach')
+                  ? <InsightsCard sessions={shown} filtered={isFiltered(filters)} onNavigate={onNavigate} />
+                  : <CoachLocked />}
               </>
             )}
 

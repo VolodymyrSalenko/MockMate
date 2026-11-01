@@ -6,6 +6,8 @@ import { getInterviewer } from "../utils/interviewers";
 import { to100 } from "../utils/scoring";
 import { saveRecording } from "../utils/recordingStore";
 import { feedbackRequestBody, requestFeedback } from "../utils/feedbackRequest";
+import { useAuth } from "../context/AuthContext";
+import { openUpgrade } from "../utils/plan";
 import { ZONES, ISSUES, TIMELINE_STEP_MS, decodeMoment, findIssues, summarizeTimeline, clockLabel } from "../utils/bodyLanguage";
 
 function BgOrbs() {
@@ -389,7 +391,8 @@ function RetryAttempts({ retries, originalScore }) {
 }
 
 // Everything about one answer, shown in the modal
-function AnswerDetail({ item, index, interviewerName, onRetry }) {
+function AnswerDetail({ item, index, interviewerName, onRetry, retryLimit = 1 }) {
+  const retriesLeft = retryLimit - (item.retries?.length || 0);
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3">
@@ -443,19 +446,28 @@ function AnswerDetail({ item, index, interviewerName, onRetry }) {
 
       <RetryAttempts retries={item.retries} originalScore={item.score} />
 
-      {onRetry && (
+      {onRetry && retriesLeft > 0 && (
         <button
           onClick={onRetry}
           className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white rounded-2xl text-sm font-bold transition-all shadow-md shadow-emerald-500/25"
         >
           🔄 Try this question again
+          {retryLimit > 1 && <span className="font-normal opacity-80">· {retriesLeft} left</span>}
         </button>
+      )}
+      {onRetry && retriesLeft <= 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 dark:border-slate-700/50 px-4 py-3 text-sm text-slate-600 dark:text-slate-400">
+          <span>{retryLimit === 1 ? "You have used your retry for this question." : `You have used all ${retryLimit} retries for this question.`}</span>
+          {retryLimit === 1 && (
+            <button onClick={openUpgrade} className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline">Pro: up to 5 retries →</button>
+          )}
+        </div>
       )}
     </div>
   );
 }
 
-function AnswerModal({ answers, index, interviewerName, onClose, onNavigate, onRetry }) {
+function AnswerModal({ answers, index, interviewerName, onClose, onNavigate, onRetry, retryLimit }) {
   const item = answers[index];
   const hasPrev = index > 0;
   const hasNext = index < answers.length - 1;
@@ -501,7 +513,7 @@ function AnswerModal({ answers, index, interviewerName, onClose, onNavigate, onR
           </button>
         </div>
         <div className="overflow-y-auto px-4 sm:px-6 py-5">
-          <AnswerDetail item={item} index={index} interviewerName={interviewerName} onRetry={() => onRetry(index)} />
+          <AnswerDetail item={item} index={index} interviewerName={interviewerName} onRetry={() => onRetry(index)} retryLimit={retryLimit} />
         </div>
       </div>
     </div>
@@ -1009,6 +1021,10 @@ export default function Debrief({
   }, [qaPairs, role, difficulty, duration]);
 
   // A retry from the answer modal: show it under that answer and keep it with the session
+  // How many times each question can be tried again, by plan (the server checks it too)
+  const { user } = useAuth();
+  const retryLimit = user?.usage?.features?.retries_per_question ?? 1;
+
   const handleRetryResult = useCallback((index, retry) => {
     const attempt = { ...retry, created_at: new Date().toISOString() };
     setDebrief((d) => ({
@@ -1167,6 +1183,7 @@ export default function Debrief({
           index={openIndex}
           onClose={() => setOpenIndex(null)}
           onNavigate={setOpenIndex}
+          retryLimit={retryLimit}
           onRetry={(i) => {
             const item = debrief.answers[i];
             setOpenIndex(null);

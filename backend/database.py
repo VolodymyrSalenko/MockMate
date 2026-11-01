@@ -159,8 +159,18 @@ def create_tables():
                 )
             """)
 
+            # -- interview_usage (one row per interview started, for plan limits) --
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS interview_usage (
+                    id          SERIAL PRIMARY KEY,
+                    user_id     UUID REFERENCES users(id) ON DELETE CASCADE,
+                    created_at  TIMESTAMP DEFAULT NOW()
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS interview_usage_user ON interview_usage (user_id, created_at)")
+
         conn.commit()
-        print("  ✅ tables ready (users, sessions, answers, cv_profiles, job_descriptions)")
+        print("  ✅ tables ready (users, sessions, answers, cv_profiles, job_descriptions, interview_usage)")
     finally:
         conn.close()
 
@@ -219,6 +229,9 @@ def migrate_tables():
 
         # users — token version for server-side session invalidation (password change)
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INT DEFAULT 0",
+
+        # users — trying MockMate without an account (one interview, then sign up)
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_guest BOOLEAN DEFAULT FALSE",
     ]
     conn = get_connection()
     try:
@@ -579,8 +592,9 @@ def get_session_detail(session_id: int, user_id: str) -> dict | None:
 MAX_RETRIES_PER_ANSWER = 20
 
 
-def add_answer_retry(session_id: int, user_id: str, question_index: int, retry: dict) -> bool:
-    """Append one retry attempt to an answer of the user's own session."""
+def add_answer_retry(session_id: int, user_id: str, question_index: int, retry: dict,
+                     max_retries: int = MAX_RETRIES_PER_ANSWER) -> bool:
+    """Append one retry attempt to an answer of the user's own session, up to the plan's limit."""
     with db() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -590,8 +604,46 @@ def add_answer_retry(session_id: int, user_id: str, question_index: int, retry: 
                 WHERE  a.session_id = s.id
                   AND  s.id = %s AND s.user_id = %s AND a.question_index = %s
                   AND  jsonb_array_length(COALESCE(a.retries, '[]'::jsonb)) < %s
-            """, (json.dumps([retry]), session_id, user_id, question_index, MAX_RETRIES_PER_ANSWER))
+            """, (json.dumps([retry]), session_id, user_id, question_index, min(max_retries, MAX_RETRIES_PER_ANSWER)))
             return cur.rowcount > 0
+
+
+def create_guest_user(user_id: str):
+    with db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("INSERT INTO users (id, name, plan, is_guest, email_verified) VALUES (%s, 'Guest', 'free', TRUE, FALSE)",
+                        (user_id,))
+
+
+def convert_guest_user(user_id: str, email: str, password_hash: str, name: str,
+                       email_verified: bool, verification_token: str | None) -> dict:
+    """A guest signs up: the same row becomes their account, so the trial interview stays theirs.
+    The trial does not count toward the free plan's interviews."""
+    with db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM interview_usage WHERE user_id = %s AND EXISTS (SELECT 1 FROM users WHERE id = %s AND is_guest)",
+                        (user_id, user_id))
+            cur.execute("""
+                UPDATE users SET email = %s, password_hash = %s, name = %s, is_guest = FALSE,
+                                 email_verified = %s, verification_token = %s
+                WHERE id = %s AND is_guest
+                RETURNING id, email, name, plan, email_verified
+            """, (email, password_hash, name, email_verified, verification_token, user_id))
+            row = cur.fetchone()
+            return dict(zip([c[0] for c in cur.description], row)) if row else None
+
+
+def merge_guest_into(guest_id: str, user_id: str):
+    """A guest signs in to an existing account: their trial interview moves there."""
+    with db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT is_guest FROM users WHERE id = %s", (guest_id,))
+            row = cur.fetchone()
+            if not row or not row[0] or guest_id == user_id:
+                return
+            for table in ("sessions", "job_descriptions"):
+                cur.execute(f"UPDATE {table} SET user_id = %s WHERE user_id = %s", (user_id, guest_id))
+            cur.execute("DELETE FROM users WHERE id = %s", (guest_id,))
 
 
 def db_set_verification_token(user_id: str, token: str):
