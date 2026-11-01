@@ -208,8 +208,8 @@ function AppInner() {
 
   return (
     <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950">
-      <TopControls
-        belowHeader={view === 'interview' || view === 'feedback'}
+      {view !== 'interview' && <TopControls
+        belowHeader={view === 'feedback'}
         user={user}
         onUpgradeClick={() => setShowProModal(true)}
         actionButton={
@@ -226,7 +226,7 @@ function AppInner() {
             </button>
           ) : null
         }
-      />
+      />}
 
       {sidebarViews.includes(view) && (
         <Sidebar

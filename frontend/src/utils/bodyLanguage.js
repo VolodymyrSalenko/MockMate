@@ -23,7 +23,7 @@ const EXPRESSION_CODES = { neutral: 0, smiling: 1, surprised: 3, serious: 4 }
 export const GESTURES = [
   null,
   { id: 'nod',   label: 'Nodding',      icon: '👍', zone: 'green' },
-  { id: 'shake', label: 'Shaking head', icon: '🙅', zone: 'red' },
+  { id: 'shake', label: 'Shaking head', icon: '🙅', zone: 'yellow' },
 ]
 
 // Faces differ at rest (some brows sit lower than others), so each
@@ -143,18 +143,19 @@ export function decodeMoment(code) {
 }
 
 // ── Red zone: moments worth working on ──
+// Only what an interviewer would notice. Glancing away for a second or two while thinking is
+// normal, so looking away counts from 3 seconds; head movement while talking is not a mistake.
+// gapSec: a glance back shorter than this does not end the moment.
 export const ISSUES = {
-  'look-away':   { label: 'Looked away while answering', short: 'Looking away', icon: '👀', minSec: 1.2 },
-  'turned-away': { label: 'Talked to the side',          short: 'Turned away',  icon: '↪️', minSec: 1 },
-  'restless':    { label: 'Restless movement',            short: 'Restless',     icon: '🌀', minSec: 1.5 },
-  'shake':       { label: 'Shook head',                   short: 'Shaking head', icon: '🙅', minSec: 0 },
+  'look-away':   { label: 'Looked away while answering', short: 'Looking away', icon: '👀', minSec: 3,   gapSec: 0.6 },
+  'turned-away': { label: 'Talked to the side',          short: 'Turned away',  icon: '↪️', minSec: 2,   gapSec: 0.6 },
+  'restless':    { label: 'Restless movement',            short: 'Restless',     icon: '🌀', minSec: 1.5, gapSec: 1 },
 }
 
 const issueAt = {
   'look-away':   (m) => m.answering && !m.eye,
   'turned-away': (m) => m.answering && !m.steady,
   'restless':    (m) => m.restless,
-  'shake':       (m) => m.gesture?.id === 'shake',
 }
 
 // One moment is reported once, under its broadest cause: shifting in the chair also turns
@@ -162,11 +163,10 @@ const issueAt = {
 const COVERED_BY = {
   'look-away':   ['restless', 'turned-away'],
   'turned-away': ['restless'],
-  'shake':       ['restless'],
 }
 
-// Every red moment as { id, start, end } in seconds of the recording. A gap of up to
-// a second (a glance back, a skipped frame) does not split one moment into two.
+// Every red moment as { id, start, end } in seconds of the recording. A short gap (a glance
+// back, a skipped frame) does not split one moment into two.
 export function findIssues(timeline) {
   const samples = timeline?.samples || []
   const step = (timeline?.step || TIMELINE_STEP_MS) / 1000
@@ -181,7 +181,7 @@ export function findIssues(timeline) {
       const m = decodeMoment(code)
       if (!m || !test(m)) return
       const t = i * step
-      if (run && t - run.end <= 1) run.end = t + step
+      if (run && t - run.end <= ISSUES[id].gapSec) run.end = t + step
       else { close(); run = { id, start: t, end: t + step } }
     })
     close()

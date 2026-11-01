@@ -35,7 +35,7 @@ from helpers import (
     extract_text_from_pdf,
     extract_text_from_docx,
 )
-from database import init_db, upsert_user, save_session, get_sessions, get_session_detail, save_cv_profile, get_cv_profile, delete_session, add_answer_retry, get_connection
+from database import init_db, upsert_user, save_session, get_sessions, get_session_detail, save_cv_profile, get_cv_profile, delete_session, add_answer_retry, get_connection, save_job_description, get_job_descriptions, delete_job_description
 from billing import router as billing_router
 from admin import router as admin_router
 from url_reader import fetch_job_page, UrlReadError
@@ -88,19 +88,44 @@ client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=os.getenv("OPENROUTER_API_KEY"),
 )
-MODEL = "anthropic/claude-haiku-4-5"
+# Fast model for the live conversation and quick extraction, where a reply must come in about a second;
+# a stronger model where the candidate reads our judgement: interview feedback and resume analysis
+MODEL_FAST     = "anthropic/claude-haiku-5.5"
+MODEL_FEEDBACK = "anthropic/claude-sonnet-5.5"
 MAX_CV_WORDS = 800
 
 DIFFICULTY_INTERVIEW_CONTEXT = {
-    "Junior": "This is a junior-level interview. Use accessible, foundational questions. Focus on learning potential, attitude, and clarity of thinking over depth of experience.",
-    "Mid":    "This is a mid-level interview. Expect concrete examples from past experience and reasonable technical depth.",
-    "Senior": "This is a senior-level interview. Probe deeply — ask for system design thinking, leadership decisions, measurable impact, and strategic choices.",
+    "Junior": "This is a junior-level interview, whatever the candidate's CV says. Be encouraging and patient. Use plain, everyday words. Focus on fundamentals, learning potential, attitude and clarity of thinking, not on depth of experience.",
+    "Mid":    "This is a mid-level interview. Expect concrete examples from past work with clear personal ownership and reasonable technical depth.",
+    "Senior": "This is a senior-level interview. Probe deeply: design thinking, trade-offs, leadership decisions, measurable impact and strategic choices.",
 }
 
+# How the interviewer decides on a follow-up, by level
+DIFFICULTY_FOLLOWUP = {
+    "Junior": "Level: Junior. Follow up only if the answer is very vague, off-topic or has no example at all. Make the follow-up gentle and easy to answer, with a hint, e.g. \"Could you give one example, even from your studies or a personal project?\" Do not ask for numbers, business impact or leadership.",
+    "Mid":    "Level: Mid. Follow up if the concrete example, their personal role or the result is missing.",
+    "Senior": "Level: Senior. Follow up if the reasoning, the trade-offs or the measurable impact are missing, e.g. \"Why that approach over the alternatives?\" or \"What changed, in numbers?\"",
+}
+
+# The candidate picks the level; it decides how hard the questions are, even when the
+# CV or the job ad suggests another level (e.g. an experienced person new to the language)
 DIFFICULTY_QUESTION_CONTEXT = {
-    "Junior": "Keep questions accessible — focus on fundamentals, learning willingness, and simple real-world examples. Avoid jargon-heavy or highly senior topics.",
-    "Mid":    "Questions should require concrete examples from past experience and moderate technical depth.",
-    "Senior": "Questions should probe for senior-level depth: system design, leadership, measurable outcomes, trade-off reasoning, and strategic decisions.",
+    "Junior": """Interview level: JUNIOR (entry level, intern, career changer, or someone new to the local job market).
+- Ask about the fundamentals of the must-have skills (what something is, when to use it, how to do a simple everyday task), motivation for the role, how they learn, and teamwork.
+- Experience questions ask for ONE simple example from any source: a past job (in any field or country), studies, a course or a personal project. Ask what they did, not what business impact it had.
+- Keep each question short, about 15 words or fewer, in plain everyday words. No jargon that is not in the job ad.
+- Do NOT ask about system design or architecture, leading people, strategy, measuring business impact, trade-offs between technologies, or "how did you know it was working".
+- "strong_answer" describes a good JUNIOR answer: a clear simple example or explanation, honest about what they do not know yet.""",
+    "Mid": """Interview level: MID (several years of hands-on experience).
+- Ask for concrete examples from real work with clear personal ownership, problem solving and moderate technical depth (debugging, choosing an approach, working with stakeholders).
+- Keep each question to about 20 words.
+- Avoid company-wide strategy and organisation design; one light trade-off question is fine.
+- "strong_answer" describes a good MID answer: a specific situation, their own actions and a result.""",
+    "Senior": """Interview level: SENIOR (leads work, makes design decisions, guides others).
+- Ask about designing systems or processes, trade-offs and why they chose one option, measurable impact, influencing stakeholders, mentoring or leading, and handling ambiguity or failure.
+- Scenario questions are welcome ("How would you design...", "What would you do if..."); a question may be up to about 30 words.
+- Do not ask definitions or basic "what is X" questions.
+- "strong_answer" describes a good SENIOR answer: reasoning about options, impact in numbers, influence on others.""",
 }
 
 
@@ -237,6 +262,8 @@ class QAPair(BaseModel):
     followup_question: Optional[str] = Field(None, max_length=1000)
     competency: Optional[str] = Field(None, max_length=300)
     strong_answer: Optional[str] = Field(None, max_length=1000)
+    # The answer was stopped by the 2-minute answer time limit
+    cut_off: Optional[bool] = None
 
 
 class DebriefRequest(BaseModel):
@@ -247,6 +274,16 @@ class DebriefRequest(BaseModel):
     interview_type: Optional[str] = Field("full", max_length=30)
     requirements: Optional[List[Requirement]] = Field(None, max_length=12)
     cv_summary: Optional[str] = Field(None, max_length=5000)
+
+
+def with_first_question(intro: str, question: str) -> str:
+    """The intro must end by asking the first question; the model sometimes only announces it
+    ("Let's begin with the first one."), and the candidate is left waiting."""
+    def words(text):
+        return " ".join(re.sub(r"[^\w\s]", " ", text.lower()).split())
+    if words(question)[:60] in words(intro):
+        return intro
+    return f"{intro.rstrip()} {question}"
 
 
 def normalize_questions(raw_questions, n: int):
@@ -393,6 +430,7 @@ async def parse_jd(req: ParseJDRequest, current_user: dict = Depends(get_current
         jd_text=req.jd_text.strip(),
         cv_section=cv_section,
         company_context=company_context,
+        difficulty=difficulty,
         difficulty_context=difficulty_context,
         interview_type_context=interview_type_context,
         question_count=n,
@@ -402,7 +440,7 @@ async def parse_jd(req: ParseJDRequest, current_user: dict = Depends(get_current
 
     try:
         # Each question now carries a hidden rubric, so allow more room
-        raw = chat(client, MODEL, [{"role": "user", "content": prompt}], max_tokens=1200 + 150 * n)
+        raw = chat(client, MODEL_FAST, [{"role": "user", "content": prompt}], max_tokens=1200 + 150 * n, effort="off")
         data = extract_json(raw)
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to generate questions — please try again")
@@ -420,10 +458,17 @@ async def parse_jd(req: ParseJDRequest, current_user: dict = Depends(get_current
         f"I will ask you {questions_phrase(n)}. Take your time and speak clearly. "
         f"Here is your first question. {questions[0]}"
     )
+    intro_message = with_first_question(intro_message, questions[0])
 
     cv_summary = None
     if req.cv_text and req.cv_text.strip():
         cv_summary = trim_to_words(strip_contact_pii(req.cv_text), 200)
+
+    # Remember the job ad so it can be picked again; the interview goes ahead even if this fails
+    try:
+        save_job_description(str(current_user["id"]), req.jd_text, role, req.company_name)
+    except Exception as e:
+        print(f"⚠️  Could not save job description: {e}")
 
     return {
         "role": role,
@@ -457,7 +502,7 @@ async def question_bank(request: Request, req: QuestionBankRequest, current_user
 
     n = req.question_count
     try:
-        raw = chat(client, MODEL, [{"role": "user", "content": prompt}], max_tokens=800 + 150 * n)
+        raw = chat(client, MODEL_FAST, [{"role": "user", "content": prompt}], max_tokens=800 + 150 * n, effort="off")
         data = extract_json(raw)
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to generate questions — please try again")
@@ -472,6 +517,7 @@ async def question_bank(request: Request, req: QuestionBankRequest, current_user
         f"I will ask you {questions_phrase(n)}. Take your time and speak clearly. "
         f"Here is your first question. {questions[0]}"
     )
+    intro_message = with_first_question(intro_message, questions[0])
 
     return {
         "role": role,
@@ -531,9 +577,10 @@ async def respond(request: Request, req: RespondRequest, current_user: dict = De
         decision_prompt = RESPOND_DECISION_PROMPT.format(
             number=idx + 1, total=total, answer=req.user_answer, question=req.questions[idx],
             rubric=rubric, short_note=short_note, move_on=move_on,
+            level_followup=DIFFICULTY_FOLLOWUP.get(difficulty, DIFFICULTY_FOLLOWUP["Mid"]),
         )
         try:
-            data = extract_json(chat(client, MODEL, messages + [{"role": "user", "content": decision_prompt}], max_tokens=300))
+            data = extract_json(chat(client, MODEL_FAST, messages + [{"role": "user", "content": decision_prompt}], max_tokens=300, effort="off"))
             reply = str(data.get("reply") or "").strip()
             if reply:
                 if data.get("followup") is True:
@@ -546,7 +593,7 @@ async def respond(request: Request, req: RespondRequest, current_user: dict = De
     messages.append({"role": "user", "content": f"[Candidate answer]: {req.user_answer}\n\n[Instruction]: {instruction}"})
 
     try:
-        reply = chat(client, MODEL, messages, max_tokens=300).strip()
+        reply = chat(client, MODEL_FAST, messages, max_tokens=300, effort="off").strip()
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to get interviewer response — please try again")
 
@@ -590,7 +637,7 @@ async def upload_cv_profile(file: UploadFile = File(...), current_user: dict = D
 
     try:
         prompt = CV_PARSE_PROMPT.format(cv_text=cv_text_trimmed)
-        raw = chat(client, MODEL, [{"role": "user", "content": prompt}], max_tokens=2000)
+        raw = chat(client, MODEL_FAST, [{"role": "user", "content": prompt}], max_tokens=3000, effort="off")
         parsed = extract_json(raw)
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to parse CV — please try again")
@@ -634,7 +681,7 @@ async def analyse_cv(current_user: dict = Depends(get_current_user)):
 
     try:
         prompt = CV_ANALYSIS_PROMPT.format(cv_text=cv_text)
-        raw = chat(client, MODEL, [{"role": "user", "content": prompt}], max_tokens=1000)
+        raw = chat(client, MODEL_FEEDBACK, [{"role": "user", "content": prompt}], max_tokens=1000 + 3000, effort="medium")
         data = extract_json(raw)
     except Exception:
         raise HTTPException(status_code=500, detail="Analysis failed — please try again")
@@ -660,6 +707,8 @@ async def debrief(req: DebriefRequest, current_user: dict = Depends(get_current_
                       f"A{i} (after follow-up): {pair.answer}"]
         else:
             lines.append(f"A{i}: {pair.answer}")
+        if pair.cut_off:
+            lines.append("(This answer was cut off by the 2-minute answer time limit.)")
         blocks.append("\n".join(lines))
 
     difficulty = req.difficulty if req.difficulty in LEVEL_EXPECTATIONS else "Mid"
@@ -689,12 +738,12 @@ async def debrief(req: DebriefRequest, current_user: dict = Depends(get_current_
         {"role": "user", "content": prompt},
     ]
 
-    # Longer interviews need more room for per-answer feedback; low temperature = steadier scores.
+    # Longer interviews need more room for per-answer feedback, plus room for the model to think.
     # The model occasionally returns malformed JSON, so try a second time before giving up.
     data = None
     for attempt in (1, 2):
         try:
-            raw = chat(client, MODEL, messages, max_tokens=min(10000, 2000 + 700 * len(req.qa_pairs)), temperature=0.2)
+            raw = chat(client, MODEL_FEEDBACK, messages, max_tokens=min(10000, 2000 + 700 * len(req.qa_pairs)) + 4000, effort="medium")
             data = extract_json(raw)
             break
         except Exception as e:
@@ -917,6 +966,18 @@ def save_retry(session_id: int, question_index: int, req: RetryIn, current_user:
     if not add_answer_retry(session_id, str(current_user["id"]), question_index, retry):
         raise HTTPException(status_code=404, detail="Answer not found")
     return {"saved": True}
+
+
+@app.get("/job-descriptions")
+def list_job_descriptions(current_user: dict = Depends(get_current_user)):
+    return get_job_descriptions(str(current_user["id"]))
+
+
+@app.delete("/job-descriptions/{jd_id}")
+def remove_job_description(jd_id: int, current_user: dict = Depends(get_current_user)):
+    if not delete_job_description(jd_id, str(current_user["id"])):
+        raise HTTPException(status_code=404, detail="Job description not found")
+    return {"deleted": True}
 
 
 @app.delete("/sessions/{session_id}")

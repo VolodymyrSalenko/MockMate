@@ -1,12 +1,11 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { wpmColor, durationLabel } from "../utils/speechAnalytics";
 import { saveSessionToDB, saveRetry } from "../utils/api";
-import { getStoredToken } from "../context/AuthContext";
 import RetryModal from "./RetryModal";
-import { BACKEND_URL } from "../utils/config";
 import { getInterviewer } from "../utils/interviewers";
 import { to100 } from "../utils/scoring";
 import { saveRecording } from "../utils/recordingStore";
+import { feedbackRequestBody, requestFeedback } from "../utils/feedbackRequest";
 import { ZONES, ISSUES, TIMELINE_STEP_MS, decodeMoment, findIssues, summarizeTimeline, clockLabel } from "../utils/bodyLanguage";
 
 function BgOrbs() {
@@ -941,48 +940,17 @@ export default function Debrief({
     requestedRef.current = true;
     const fetchDebrief = async () => {
       try {
-        // :one: Clean Q/A pairs and prevent empty payload
-        // Each pair carries the follow-up exchange (if any) and the question's hidden rubric
-        const cleanPairs = qaPairs
-          .map(({ question, answer, first_answer, followup_question }, i) => ({
-            question: question || "",
-            answer: answer || "",
-            first_answer: first_answer || null,
-            followup_question: followup_question || null,
-            competency: questionPlan[i]?.competency || null,
-            strong_answer: questionPlan[i]?.strong_answer || null,
-          }))
-          .filter((p) => p.question && p.answer);
-
-        if (cleanPairs.length === 0) {
+        const body = feedbackRequestBody({ qaPairs, questionPlan, role, language, difficulty, interviewType, requirements, cvSummary });
+        if (!body) {
           setError("No valid answers found.");
           setLoading(false);
           return;
-        } // :two: Normalize language (backend expects en-US, de-DE, fr-FR)
+        }
+        const normalizedLang = body.language;
+        const safeRole = body.role;
 
-        const normalizedLang = language.includes("-")
-          ? language
-          : `${language}-US`; // :three: Ensure role is always a string (backend requires it)
-
-        const safeRole = role || "General";
-
-        const res = await fetch(`${BACKEND_URL}/debrief`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${getStoredToken()}` },
-          body: JSON.stringify({
-            qa_pairs: cleanPairs,
-            role: safeRole,
-            language: normalizedLang,
-            difficulty,
-            interview_type: interviewType,
-            requirements,
-            cv_summary: cvSummary,
-          }),
-        });
-
-        if (!res.ok) throw new Error("Failed to get debrief");
-
-        const data = await res.json();
+        // Usually already started by the interview while the interviewer said goodbye
+        const data = await requestFeedback(body);
 
         if (data.answers) {
           data.answers = data.answers.map((a, i) => ({

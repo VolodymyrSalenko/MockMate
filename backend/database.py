@@ -1,4 +1,5 @@
 
+import hashlib
 import json
 import os
 import psycopg
@@ -142,8 +143,23 @@ def create_tables():
                 )
             """)
 
+            # -- job_descriptions (recent job ads, to practise the same one again) --
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS job_descriptions (
+                    id            SERIAL PRIMARY KEY,
+                    user_id       UUID REFERENCES users(id) ON DELETE CASCADE,
+                    jd_hash       TEXT NOT NULL,
+                    role          TEXT,
+                    company_name  TEXT,
+                    jd_text       TEXT NOT NULL,
+                    created_at    TIMESTAMP DEFAULT NOW(),
+                    last_used_at  TIMESTAMP DEFAULT NOW(),
+                    UNIQUE (user_id, jd_hash)
+                )
+            """)
+
         conn.commit()
-        print("  ✅ tables ready (users, sessions, answers, cv_profiles)")
+        print("  ✅ tables ready (users, sessions, answers, cv_profiles, job_descriptions)")
     finally:
         conn.close()
 
@@ -339,6 +355,51 @@ def get_sessions(user_id: str) -> list:
     for s in sessions:
         s["skills"] = report_skills(s.pop("report"))
     return sessions
+
+
+MAX_JOB_DESCRIPTIONS = 20  # per user; the least recently used ones are dropped
+
+
+def save_job_description(user_id: str, jd_text: str, role: str | None, company_name: str | None):
+    """Remember a job ad the user practised with. The same text again only moves it to the top."""
+    text = jd_text.strip()
+    jd_hash = hashlib.sha256(" ".join(text.split()).lower().encode()).hexdigest()
+    with db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO job_descriptions (user_id, jd_hash, role, company_name, jd_text)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (user_id, jd_hash) DO UPDATE
+                SET last_used_at = NOW(),
+                    role         = COALESCE(EXCLUDED.role, job_descriptions.role),
+                    company_name = COALESCE(EXCLUDED.company_name, job_descriptions.company_name)
+            """, (user_id, jd_hash, role, company_name, text))
+            cur.execute("""
+                DELETE FROM job_descriptions
+                WHERE user_id = %s AND id NOT IN (
+                    SELECT id FROM job_descriptions WHERE user_id = %s
+                    ORDER BY last_used_at DESC LIMIT %s)
+            """, (user_id, user_id, MAX_JOB_DESCRIPTIONS))
+
+
+def get_job_descriptions(user_id: str) -> list:
+    with db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, role, company_name, jd_text, last_used_at
+                FROM   job_descriptions
+                WHERE  user_id = %s
+                ORDER  BY last_used_at DESC
+            """, (user_id,))
+            cols = [d[0] for d in cur.description]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+
+def delete_job_description(jd_id: int, user_id: str) -> bool:
+    with db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM job_descriptions WHERE id = %s AND user_id = %s", (jd_id, user_id))
+            return cur.rowcount > 0
 
 
 def delete_session(session_id: int, user_id: str) -> bool:

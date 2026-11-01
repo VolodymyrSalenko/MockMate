@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { fetchCVProfile, uploadCVProfile } from '../utils/api'
+import { fetchCVProfile, uploadCVProfile, fetchJobDescriptions, deleteJobDescription } from '../utils/api'
+import { formatDate } from '../utils/scoring'
 import { getStoredToken } from '../context/AuthContext'
 import { IconMic } from '../utils/icons'
 import { INTERVIEWERS, DEFAULT_INTERVIEWER, getInterviewer } from '../utils/interviewers'
@@ -163,7 +164,7 @@ export default function Landing({ onStart, user, onUpgrade }) {
   const [companyName,   setCompanyName]   = useState('')
   const [loading,       setLoading]       = useState(false)
   const [error,         setError]         = useState('')
-  const [difficulty,    setDifficulty]    = useState('Mid')
+  const [difficulty,    setDifficulty]    = useState('Junior')
   const [language,      setLanguage]      = useState('en-US')
   const [interviewType, setInterviewType] = useState('full')
   const [questionCount, setQuestionCount] = useState(loadQuestionCount)
@@ -184,6 +185,21 @@ export default function Landing({ onStart, user, onUpgrade }) {
   const [jdError,   setJdError]   = useState('')
   const [jdUrl,     setJdUrl]     = useState('')
   const [jdSource,  setJdSource]  = useState(null)   // website the JD was read from
+
+  // Job ads used before, to practise the same one again
+  const [recentJds,  setRecentJds]  = useState([])
+  const [showRecent, setShowRecent] = useState(false)
+  const [jdRecent,   setJdRecent]   = useState(null)   // the saved ad currently loaded
+  useEffect(() => { fetchJobDescriptions().then(setRecentJds) }, [])
+
+  const pickRecent = (item) => {
+    setJd(item.jd_text); setJdFile(null); setJdSource(null); setJdError(''); setJdInputMode(null)
+    if (item.company_name && !companyName.trim()) setCompanyName(item.company_name)
+    setJdRecent(item); setShowRecent(false); setShowTemplates(false)
+  }
+  const removeRecent = async (item) => {
+    if (await deleteJobDescription(item.id)) setRecentJds(list => list.filter(x => x.id !== item.id))
+  }
 
   const [selectedCategory, setSelectedCategory] = useState(null)
   const [practiceLoading,  setPracticeLoading]  = useState(false)
@@ -317,7 +333,7 @@ export default function Landing({ onStart, user, onUpgrade }) {
   }
 
   const clearJD = () => {
-    setJd(''); setJdFile(null); setJdError(''); setJdInputMode(null); setJdUrl(''); setJdSource(null)
+    setJd(''); setJdFile(null); setJdError(''); setJdInputMode(null); setJdUrl(''); setJdSource(null); setJdRecent(null)
     if (jdFileInputRef.current) jdFileInputRef.current.value = ''
   }
 
@@ -500,14 +516,47 @@ export default function Landing({ onStart, user, onUpgrade }) {
                     Job Description <span className="text-emerald-500">*</span>
                   </label>
                   {!jdCommitted && (
-                    <button
-                      onClick={() => setShowTemplates(o => !o)}
-                      className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-500 hover:text-emerald-400 transition-colors"
-                    >
-                      Use template <IconChevron className="w-3 h-3" open={showTemplates} />
-                    </button>
+                    <div className="flex items-center gap-3">
+                      {recentJds.length > 0 && (
+                        <button
+                          onClick={() => { setShowRecent(o => !o); setShowTemplates(false) }}
+                          className={`flex items-center gap-1 text-xs font-semibold transition-colors ${showRecent ? 'text-emerald-500' : 'text-emerald-600 dark:text-emerald-400 hover:text-emerald-500'}`}
+                        >
+                          Recent ({recentJds.length}) <IconChevron className="w-3 h-3" open={showRecent} />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => { setShowTemplates(o => !o); setShowRecent(false) }}
+                        className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-500 hover:text-emerald-400 transition-colors"
+                      >
+                        Use template <IconChevron className="w-3 h-3" open={showTemplates} />
+                      </button>
+                    </div>
                   )}
                 </div>
+
+                {/* Recent job ads: pick one to practise it again */}
+                {showRecent && !jdCommitted && (
+                  <div className="mb-2 max-h-64 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700/50 bg-white dark:bg-slate-900/80 divide-y divide-slate-100 dark:divide-slate-800">
+                    {recentJds.map(item => (
+                      <div key={item.id} className="group flex items-center gap-2 px-3 py-2.5 hover:bg-emerald-500/5 transition-colors">
+                        <button onClick={() => pickRecent(item)} className="flex-1 min-w-0 text-left">
+                          <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate">{item.role || 'Job description'}</p>
+                          <p className="text-xs text-slate-500 truncate">
+                            {[item.company_name, formatDate(item.last_used_at), `${item.jd_text.trim().split(/\s+/).length} words`].filter(Boolean).join(' · ')}
+                          </p>
+                        </button>
+                        <button
+                          onClick={() => removeRecent(item)}
+                          title="Remove from the list"
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-500/10 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 transition-all"
+                        >
+                          <IconX />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {/* Templates grid */}
                 {showTemplates && !jdCommitted && (
@@ -531,7 +580,8 @@ export default function Landing({ onStart, user, onUpgrade }) {
                       <IconCheck />
                     </div>
                     <span className="text-sm text-slate-700 dark:text-slate-200 flex-1 truncate">
-                      {jdFile ? jdFile.name
+                      {jdRecent && jdRecent.jd_text === jd ? [jdRecent.role || 'Saved job description', jdRecent.company_name].filter(Boolean).join(' · ')
+                        : jdFile ? jdFile.name
                         : jdSource ? `${jd.trim().split(/\s+/).length} words from ${jdSource}`
                         : `${jd.trim().split(/\s+/).length} words pasted`}
                     </span>
