@@ -5,6 +5,7 @@ import { useFaceAnalysis } from '../hooks/useFaceAnalysis'
 import { useMediaRecorder } from '../hooks/useMediaRecorder'
 import { prepareRecordingMix, addLastLineToRecording, stopLastLineInRecording } from '../utils/recordingMix'
 import { analyzeAnswer } from '../utils/speechAnalytics'
+import { EXPRESSIONS, GESTURES, ZONES, ISSUES } from '../utils/bodyLanguage'
 import { getStoredToken } from '../context/AuthContext'
 import { getInterviewer, getVoice } from '../utils/interviewers'
 
@@ -205,18 +206,12 @@ const YouTile = forwardRef(function YouTile({ stream, metrics, listening, onTurn
 
   const ready = metrics?.samplesCount > 10
   const eyeColor = !ready ? '' :
-    metrics.eyeContactPct >= 70 ? 'bg-emerald-600/80' :
-    metrics.eyeContactPct >= 40 ? 'bg-amber-500/80'   : 'bg-red-500/80'
-  const headColor = !ready ? '' :
-    metrics.headStabilityPct >= 70 ? 'bg-emerald-600/80' :
-    metrics.headStabilityPct >= 40 ? 'bg-amber-500/80'   : 'bg-red-500/80'
-  const headLabel = !ready ? null :
-    metrics.headStabilityPct >= 70 ? 'Upright' :
-    metrics.headStabilityPct >= 40 ? 'Drifting' : 'Posture'
-  const exprMeta = !ready ? null :
-    metrics.expression === 'smiling'  ? { label: 'Smiling',  color: 'bg-yellow-500/80', icon: '😊' } :
-    metrics.expression === 'serious'  ? { label: 'Serious',  color: 'bg-slate-600/80',  icon: '😐' } :
-                                        { label: 'Neutral',  color: 'bg-slate-500/80',  icon: '🙂' }
+    metrics.eyeContactPct >= 70 ? ZONES.green.badge :
+    metrics.eyeContactPct >= 40 ? ZONES.yellow.badge : ZONES.red.badge
+  const exprMeta = !ready ? null : EXPRESSIONS.find(x => x.id === metrics.expression) || EXPRESSIONS[0]
+  const issueMeta = ready ? ISSUES[metrics.issue] : null
+  // A red moment takes the place of the gesture badge; a nod shows when all is well
+  const gestureMeta = ready && !issueMeta ? GESTURES.find(x => x && x.id === metrics.gesture) : null
   const badge = 'text-white text-[10px] sm:text-xs font-bold px-2 py-0.5 rounded-full backdrop-blur-sm'
 
   return (
@@ -226,15 +221,13 @@ const YouTile = forwardRef(function YouTile({ stream, metrics, listening, onTurn
       {stream ? (
         <>
           <video ref={ref} autoPlay muted playsInline className="w-full h-full object-cover scale-x-[-1]" />
-          {exprMeta && (
-            <span className={`absolute top-2.5 right-2.5 hidden sm:inline ${exprMeta.color} ${badge}`}>
-              {exprMeta.icon} {exprMeta.label}
-            </span>
-          )}
+          {/* One line: eye contact, expression, and a red badge for a moment worth working on */}
           {ready && (
-            <div className="absolute top-2.5 left-2.5 hidden sm:flex gap-1">
+            <div className="absolute top-2.5 left-2.5 right-2.5 hidden sm:flex flex-wrap gap-1">
               <span className={`${eyeColor} ${badge}`}>👁 {metrics.eyeContactPct}%</span>
-              {headLabel && <span className={`${headColor} ${badge}`}>{headLabel}</span>}
+              <span className={`${ZONES[exprMeta.zone].badge} ${badge}`}>{exprMeta.icon} {exprMeta.label}</span>
+              {gestureMeta && <span className={`${ZONES[gestureMeta.zone].badge} ${badge}`}>{gestureMeta.icon} {gestureMeta.label}</span>}
+              {issueMeta && <span className={`${ZONES.red.badge} ${badge} animate-pulse`}>⚠ {issueMeta.short}</span>}
             </div>
           )}
         </>
@@ -329,7 +322,8 @@ export default function Interview({ sessionData, onComplete, onExit }) {
   const recordingUrlRef      = useRef(null)
   const endedRef             = useRef(false)  // set once the user ends the interview early
 
-  const faceMetrics = useFaceAnalysis(webcamVideoRef, !!webcamStream)
+  const answeringRef = useRef(false)  // marks the moments you answer in the body language timeline
+  const faceMetrics = useFaceAnalysis(webcamVideoRef, !!webcamStream, answeringRef)
   faceMetricsRef.current = faceMetrics
 
   const { recordingUrl, startRecording, stopRecording } = useMediaRecorder()
@@ -493,6 +487,8 @@ export default function Interview({ sessionData, onComplete, onExit }) {
     onFinalTranscript: handleFinalTranscript,
     language,
   })
+
+  useEffect(() => { answeringRef.current = isListening }, [isListening])
 
   useEffect(() => {
     if (isListening) {
