@@ -156,15 +156,15 @@ export async function saveRetry(sessionId, questionIndex, retry) {
  * Fetch aggregated top filler words for the current user.
  * @returns {Promise<Array<{word: string, count: number}>>}
  */
-export async function fetchFillerStats() {
-  try {
-    const res = await fetch(`${BACKEND_URL}/sessions/filler-stats`, { headers: authHeaders() })
-    if (!res.ok) return []
-    const data = await res.json()
-    return data.fillers || []
-  } catch {
-    return []
-  }
+/** AI review of the chosen interviews: progress, strengths and what to practise next. */
+export async function fetchInsights(sessionIds) {
+  const res = await fetch(`${BACKEND_URL}/insights`, {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ session_ids: sessionIds }),
+  })
+  if (!res.ok) throw new Error('Could not analyse your progress')
+  return res.json()
 }
 
 /**

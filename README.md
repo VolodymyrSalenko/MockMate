@@ -60,7 +60,7 @@ flowchart TD
 - Push-to-talk recording via Web Speech API (spacebar or button)
 - Smart follow-up questions when answers are too short
 - Difficulty levels: **Junior / Mid / Senior**
-- Interview types: **Full · Behavioral · Technical · Screening**
+- Interview types: **Full · Behavioral (STAR) · Technical**
 - Question bank mode (System Design, React, Python, SQL, Leadership, and more)
 - Language support: **English · German · French**
 

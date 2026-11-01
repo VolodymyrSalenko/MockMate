@@ -1,17 +1,18 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine,
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
 } from 'recharts'
-import { fetchSessions, fetchFillerStats } from '../utils/api'
+import { fetchSessions, fetchInsights } from '../utils/api'
 import { durationLabel } from '../utils/speechAnalytics'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import {
   scoreColor, scoreHex,
-  formatShort, langInfo, avgArr, to100,
+  formatShort, avgArr, to100,
 } from '../utils/scoring'
-import { IconList, IconStar, IconTarget, IconTrophy, IconFlame, IconGlobe, IconBarChart, IconMic } from '../utils/icons'
+import { IconList, IconStar, IconTrophy, IconFlame, IconMic } from '../utils/icons'
+import { FilterBar, applyFilters, useSessionFilters, isFiltered, TYPE_LABELS } from './SessionFilters'
 
 // ── Practice streak ───────────────────────────────────────────────────────────
 function calcStreak(sessions) {
@@ -32,6 +33,13 @@ function calcStreak(sessions) {
   return streak
 }
 
+function useTooltipStyle() {
+  const { theme } = useTheme()
+  return theme === 'dark'
+    ? { backgroundColor: 'rgba(15,23,42,0.95)', border: '1px solid rgba(51,65,85,0.6)', borderRadius: 12, padding: '8px 12px' }
+    : { backgroundColor: 'rgba(255,255,255,0.97)', border: '1px solid rgba(226,232,240,0.8)', borderRadius: 12, padding: '8px 12px' }
+}
+
 // ── Stat card ─────────────────────────────────────────────────────────────────
 function StatCard({ icon, label, value, sub, color = 'text-slate-900 dark:text-white' }) {
   return (
@@ -46,45 +54,61 @@ function StatCard({ icon, label, value, sub, color = 'text-slate-900 dark:text-w
   )
 }
 
-// ── Score progression chart (content + AI) ────────────────────────────────────
-function ScoreChart({ sessions }) {
-  const { theme } = useTheme()
-  const tooltipStyle = theme === 'dark'
-    ? { backgroundColor: 'rgba(15,23,42,0.95)', border: '1px solid rgba(51,65,85,0.6)', borderRadius: 12, backdropFilter: 'blur(12px)' }
-    : { backgroundColor: 'rgba(255,255,255,0.97)', border: '1px solid rgba(226,232,240,0.8)', borderRadius: 12 }
+// ── Score progression: one point per interview ────────────────────────────────
+function ScoreTooltip({ active, payload }) {
+  const style = useTooltipStyle()
+  if (!active || !payload?.length) return null
+  const s = payload[0].payload
+  return (
+    <div style={style} className="text-xs space-y-0.5">
+      <p className="font-bold text-slate-800 dark:text-slate-100">{s.when}</p>
+      <p className="text-slate-500 truncate max-w-[220px]">{s.role}</p>
+      <p className="text-slate-500">{s.level} · {s.type}</p>
+      <p className={`font-black text-sm ${scoreColor(s.raw)}`}>{s.score}/100</p>
+      <p className="text-emerald-500 text-[10px] font-semibold">Click to open the feedback</p>
+    </div>
+  )
+}
+
+function ScoreChart({ sessions, onOpenSession }) {
   const data = [...sessions]
-    .reverse()
     .filter(s => s.overall_score != null)
-    .slice(-10)
-    .map(s => ({
-      date:    formatShort(s.created_at),
-      content: to100(s.overall_score),
-      raw:     s.overall_score,
-      role:    s.role || '',
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+    .slice(-30)
+    .map((s, i) => ({
+      // Each interview is its own point, even when several happened on one day
+      n:     i,
+      id:    s.id,
+      date:  formatShort(s.created_at),
+      when:  new Date(s.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      score: to100(s.overall_score),
+      raw:   s.overall_score,
+      role:  s.role || 'Interview',
+      level: s.difficulty || 'Mid',
+      type:  TYPE_LABELS[s.interview_type || 'full'] || s.interview_type,
     }))
 
   return (
-    <div className="glass border border-slate-200 dark:border-slate-700/40 rounded-2xl p-6 h-full">
+    <div className="glass border border-slate-200 dark:border-slate-700/40 rounded-2xl p-6">
       <p className="text-slate-900 dark:text-white font-bold mb-1">Score Progression</p>
-      <p className="text-slate-600 dark:text-slate-400 text-xs mb-4">Last {data.length} interviews</p>
-
+      <p className="text-slate-600 dark:text-slate-400 text-xs mb-4">
+        {data.length ? `Each point is one interview · last ${data.length} · click a point to open its feedback` : 'No scored interviews for these filters'}
+      </p>
       {data.length < 2 ? (
-        <div className="flex items-center justify-center h-36 text-slate-600 dark:text-slate-400 text-sm">Complete more interviews to see your trend</div>
+        <div className="flex items-center justify-center h-40 text-slate-600 dark:text-slate-400 text-sm">Complete more interviews to see your trend</div>
       ) : (
-        <ResponsiveContainer width="100%" height={160}>
-          <LineChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-            <XAxis dataKey="date" tick={{ fill: '#475569', fontSize: 10 }} axisLine={false} tickLine={false} />
+        <ResponsiveContainer width="100%" height={180}>
+          <LineChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }} style={{ cursor: 'pointer' }}
+            onClick={(e) => { const point = data[e?.activeTooltipIndex ?? e?.activeIndex]; if (point) onOpenSession(point.id) }}>
+            <XAxis dataKey="n" type="number" domain={[0, data.length - 1]} ticks={data.map(d => d.n)}
+              tickFormatter={(n) => (n === 0 || data[n].date !== data[n - 1].date ? data[n].date : '')}
+              tick={{ fill: '#475569', fontSize: 10 }} axisLine={false} tickLine={false} />
             <YAxis domain={[0, 100]} ticks={[0, 50, 100]} tick={{ fill: '#475569', fontSize: 10 }} axisLine={false} tickLine={false} />
-            <ReferenceLine y={70} stroke="rgba(16,185,129,0.15)" strokeDasharray="4 4" />
-            <Tooltip
-              contentStyle={tooltipStyle}
-              labelStyle={{ color: theme === 'dark' ? '#e2e8f0' : '#1e293b', fontWeight: 700, fontSize: 11 }}
-              itemStyle={{ fontSize: 11, color: theme === 'dark' ? '#94a3b8' : '#475569' }}
-              formatter={(v) => [`${v}/100`, 'Score']}
-            />
-            <Line type="monotone" dataKey="content" stroke="#10b981" strokeWidth={2.5}
+            <ReferenceLine y={70} stroke="rgba(16,185,129,0.25)" strokeDasharray="4 4" />
+            <Tooltip content={<ScoreTooltip />} cursor={{ stroke: 'rgba(100,116,139,0.3)' }} />
+            <Line type="monotone" dataKey="score" stroke="#10b981" strokeWidth={2.5} isAnimationActive={false}
               dot={({ cx, cy, payload, key }) => <circle key={key} cx={cx} cy={cy} r={4} fill={scoreHex(payload.raw)} stroke="#020617" strokeWidth={2} />}
-              activeDot={{ r: 6, fill: '#10b981' }} />
+              activeDot={{ r: 7, fill: '#10b981', style: { cursor: 'pointer' }, onClick: (_, e) => { const point = data[e?.index]; if (point) onOpenSession(point.id) } }} />
           </LineChart>
         </ResponsiveContainer>
       )}
@@ -92,47 +116,81 @@ function ScoreChart({ sessions }) {
   )
 }
 
-// ── Skill benchmark radar ─────────────────────────────────────────────────────
-// Each axis is 0-100: the three answer criteria (AI, 1-10 × 10), STAR coverage (AI),
-// and the two webcam measurements taken while answering
-const SKILL_AXES = [
-  { skill: 'Relevance',   get: s => s.skills?.relevance, scale: 10 },
-  { skill: 'Examples',    get: s => s.skills?.examples,  scale: 10 },
-  { skill: 'Clarity',     get: s => s.skills?.clarity,   scale: 10 },
-  { skill: 'Structure',   get: s => s.skills?.structure, scale: 1 },
-  { skill: 'Eye Contact', get: s => s.eye_contact_pct,   scale: 1 },
-  { skill: 'Stability',   get: s => s.head_stability_pct, scale: 1 },
+// ── Skill radars: answers and body language ─────────────────────────────────
+// Every axis is 0-100. Fluency joins speaking pace (best between 110 and 170 words a
+// minute) and filler words (fewer is better), pace weighing a little more.
+const pace    = (wpm) => wpm == null ? null : Math.max(0, 100 - 2 * Math.max(0, 110 - wpm, wpm - 170))
+const fillers = (perMin) => perMin == null ? null : Math.max(0, 100 - perMin * 15)
+function fluency(delivery) {
+  const p = pace(delivery?.wpm), f = fillers(delivery?.fillers_per_min)
+  if (p == null && f == null) return null
+  return Math.round(p == null ? f : f == null ? p : 0.6 * p + 0.4 * f)
+}
+
+const ANSWER_AXES = [
+  { skill: 'Relevance', hint: 'Answers the actual question', get: s => s.skills?.relevance != null ? s.skills.relevance * 10 : null },
+  { skill: 'Examples',  hint: 'Concrete examples and details', get: s => s.skills?.examples != null ? s.skills.examples * 10 : null },
+  { skill: 'Clarity',   hint: 'Easy to follow', get: s => s.skills?.clarity != null ? s.skills.clarity * 10 : null },
+  { skill: 'Structure', hint: 'How much of STAR the stories covered', get: s => s.skills?.structure },
+  { skill: 'Fluency',   hint: 'Speaking pace (best 110-170 words a minute) and few filler words', get: s => fluency(s.delivery) },
 ]
 
-function SkillBenchmark({ sessions }) {
-  const valid = sessions.filter(s => s.overall_score != null)
-  const skillData = SKILL_AXES.map(({ skill, get, scale }) => {
-    const values = sessions.map(get).filter(v => v != null)
-    const value  = values.length ? Math.round(avgArr(values) * scale) : null
-    return { skill, value: value ?? 0, label: value ?? '–' }
+const VIDEO_AXES = [
+  { skill: 'Eye Contact', hint: 'Looking at the camera, whole interview', get: s => s.eye_contact_pct },
+  { skill: 'Focus',       hint: 'Eye contact while you answer', get: s => s.video?.focus },
+  { skill: 'Stability',   hint: 'Head upright and facing the camera', get: s => s.head_stability_pct },
+  { skill: 'Calm',        hint: 'Time without restless movement', get: s => s.video?.calm },
+  { skill: 'Presence',    hint: 'Overall impression: a friendly or neutral face, a smile now and then, and few moments worth working on', get: s => s.video?.presence },
+]
+
+function RadarCard({ title, subtitle, axes, sessions }) {
+  const style = useTooltipStyle()
+  // The newest interview that has data for these axes, against the average of all filtered ones
+  const withData = sessions.filter(s => axes.some(a => a.get(s) != null))
+  const latest = withData[0]
+  const data = axes.map(({ skill, hint, get }) => {
+    const values = withData.map(get).filter(v => v != null)
+    const avg = values.length ? Math.round(avgArr(values)) : null
+    const last = latest ? get(latest) : null
+    return { skill, hint, avg: avg ?? 0, latest: last != null ? Math.round(last) : 0, avgLabel: avg, latestLabel: last != null ? Math.round(last) : null }
   })
 
   return (
-    <div className="glass border border-slate-200 dark:border-slate-700/40 rounded-2xl p-6 h-full">
-      <p className="text-slate-900 dark:text-white font-bold mb-1">Skill Benchmark</p>
-      <p className="text-slate-600 dark:text-slate-400 text-xs mb-2">Averaged across all sessions</p>
-      {!valid.length ? (
-        <div className="flex items-center justify-center h-48 text-slate-600 dark:text-slate-400 text-sm">Complete interviews to see your skills</div>
+    <div className="glass border border-slate-200 dark:border-slate-700/40 rounded-2xl p-6">
+      <p className="text-slate-900 dark:text-white font-bold mb-1">{title}</p>
+      <p className="text-slate-600 dark:text-slate-400 text-xs mb-1">{subtitle}</p>
+      {!withData.length ? (
+        <div className="flex items-center justify-center h-56 text-slate-600 dark:text-slate-400 text-sm text-center">No data for these filters yet</div>
       ) : (
         <>
-          <ResponsiveContainer width="100%" height={200}>
-            <RadarChart data={skillData} margin={{ top: 10, right: 20, left: 20, bottom: 10 }}>
-              <PolarGrid stroke="rgba(51,65,85,0.5)" />
+          <div className="flex items-center gap-4 text-[11px] text-slate-500 mt-2">
+            <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-emerald-500 inline-block" />Latest interview</span>
+            {withData.length > 1 && <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-slate-400 inline-block" />Average of {withData.length}</span>}
+          </div>
+          <ResponsiveContainer width="100%" height={230}>
+            <RadarChart data={data} margin={{ top: 10, right: 30, left: 30, bottom: 10 }}>
+              <PolarGrid stroke="rgba(100,116,139,0.35)" />
               <PolarAngleAxis dataKey="skill" tick={{ fill: '#64748b', fontSize: 10, fontWeight: 600 }} />
               <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
-              <Radar dataKey="value" stroke="#10b981" fill="#10b981" fillOpacity={0.25} strokeWidth={2} />
+              {withData.length > 1 && (
+                <Radar name="Average" dataKey="avg" stroke="#94a3b8" fill="#94a3b8" fillOpacity={0.12} strokeWidth={1.5} strokeDasharray="4 3" isAnimationActive={false} />
+              )}
+              <Radar name="Latest" dataKey="latest" stroke="#10b981" fill="#10b981" fillOpacity={0.25} strokeWidth={2} isAnimationActive={false} />
+              <Tooltip
+                contentStyle={style}
+                formatter={(v, name, item) => [item.payload[name === 'Latest' ? 'latestLabel' : 'avgLabel'] ?? '–', name]}
+                labelFormatter={(label) => `${label} — ${data.find(d => d.skill === label)?.hint || ''}`}
+                labelStyle={{ fontWeight: 700, fontSize: 11 }}
+                itemStyle={{ fontSize: 11 }}
+              />
             </RadarChart>
           </ResponsiveContainer>
-          <div className="flex justify-center gap-3 mt-1 flex-wrap">
-            {skillData.map(d => (
-              <div key={d.skill} className="text-center">
-                <p className="text-emerald-400 text-xs font-bold">{d.label}</p>
-                <p className="text-slate-600 dark:text-slate-400 text-xs">{d.skill}</p>
+          <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mt-1">
+            {data.map(d => (
+              <div key={d.skill} className="text-center" title={d.hint}>
+                <p className="text-emerald-500 text-sm font-black">{d.latestLabel ?? '–'}</p>
+                {withData.length > 1 && <p className="text-slate-400 text-[10px]">avg {d.avgLabel ?? '–'}</p>}
+                <p className="text-slate-600 dark:text-slate-400 text-[11px]">{d.skill}</p>
               </div>
             ))}
           </div>
@@ -142,160 +200,185 @@ function SkillBenchmark({ sessions }) {
   )
 }
 
-// ── Breakdown section ─────────────────────────────────────────────────────────
-function BreakdownCard({ title, icon, rows }) {
+// ── AI review of the interviews on screen ───────────────────────────────────
+// One review per set of interviews, kept in this browser so it is not asked for again
+const INSIGHTS_KEY = 'mockmate.dashboardInsights'
+
+function cachedInsights() {
+  try { return JSON.parse(localStorage.getItem(INSIGHTS_KEY) || '{}') } catch { return {} }
+}
+
+function storeInsights(key, data) {
+  try {
+    const all = { ...cachedInsights(), [key]: { ...data, at: Date.now() } }
+    const newest = Object.entries(all).sort((a, b) => b[1].at - a[1].at).slice(0, 10)
+    localStorage.setItem(INSIGHTS_KEY, JSON.stringify(Object.fromEntries(newest)))
+  } catch { /* the review is just asked for again next time */ }
+}
+
+const TREND = {
+  up:      { text: 'Improving', cls: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/30', icon: '↗' },
+  flat:    { text: 'Steady',    cls: 'text-amber-500 bg-amber-500/10 border-amber-500/30',       icon: '→' },
+  down:    { text: 'Slipping',  cls: 'text-red-500 bg-red-500/10 border-red-500/30',             icon: '↘' },
+  unclear: { text: 'Too early to tell', cls: 'text-slate-500 bg-slate-500/10 border-slate-500/30', icon: '·' },
+}
+
+// Written for all interviews on its own; after a filter change it waits for "Update review",
+// so clicking through filters does not ask the AI each time
+function InsightsCard({ sessions, filtered, onNavigate }) {
+  const ids = useMemo(() => sessions.map(s => s.id).sort((a, b) => a - b), [sessions])
+  const key = ids.join(',')
+  const [review, setReview]     = useState(null)    // { key, data } of the review on screen
+  const [loading, setLoading]   = useState(false)
+  const [error, setError]       = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  const requestRef = useRef(0)
+
+  const generate = useCallback((force = false) => {
+    const cached = cachedInsights()[key]
+    if (cached && !force) { setReview({ key, data: cached }); return }
+    const n = ++requestRef.current
+    setLoading(true); setError(false)
+    fetchInsights(ids.slice(-50))
+      .then(data => { if (n !== requestRef.current) return; storeInsights(key, data); setReview({ key, data }) })
+      .catch(() => { if (n === requestRef.current) setError(true) })
+      .finally(() => { if (n === requestRef.current) setLoading(false) })
+  }, [key, ids])
+
+  useEffect(() => {
+    requestRef.current++   // a review still on its way is for the previous set
+    setLoading(false); setError(false)
+    const cached = cachedInsights()[key]
+    if (cached) setReview({ key, data: cached })
+    else if (!filtered && ids.length) generate()
+  }, [key])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  const data = review?.data
+  const stale = review && review.key !== key
+  const trend = TREND[data?.trend] || TREND.unclear
+  const countText = `${sessions.length} interview${sessions.length !== 1 ? 's' : ''}`
+
   return (
-    <div className="glass border border-slate-200 dark:border-slate-700/40 rounded-2xl p-5">
-      <div className="flex items-center gap-2 text-slate-900 dark:text-white font-bold text-sm mb-3">{icon}<span>{title}</span></div>
-      {rows.length === 0 ? (
-        <p className="text-slate-600 dark:text-slate-400 text-xs">No data yet</p>
-      ) : (
-        <div className="space-y-2.5">
-          {rows.map(r => (
-            <div key={r.label} className="space-y-1">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
-                  {r.flag && <span>{r.flag}</span>}
-                  <span>{r.label}</span>
-                  <span className="text-slate-600 dark:text-slate-400">×{r.count}</span>
-                </span>
-                {r.avg != null && (
-                  <span className={`font-bold ${scoreColor(r.avg)}`}>{to100(r.avg)}/100</span>
-                )}
-              </div>
-              <div className="h-1 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
-                <div
-                  className="h-full rounded-full transition-all duration-700"
-                  style={{ width: `${(r.count / rows[0].count) * 100}%`, background: scoreHex(r.avg || 5) }}
-                />
-              </div>
+    <div className="glass border border-slate-200 dark:border-slate-700/40 rounded-2xl p-6 space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-slate-900 dark:text-white font-bold">🧭 Coach's Review</p>
+          <p className="text-slate-600 dark:text-slate-400 text-xs mt-0.5">AI review of this dashboard: the {countText} that match{sessions.length === 1 ? 'es' : ''} your filters</p>
+        </div>
+        {data && !loading && (
+          <button
+            onClick={() => generate(true)}
+            className={`flex-shrink-0 text-xs font-bold px-3 py-1.5 rounded-xl border transition-all ${
+              stale
+                ? 'text-white bg-gradient-to-r from-emerald-500 to-teal-500 border-transparent shadow-md shadow-emerald-500/30 hover:scale-105'
+                : 'text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700/60 hover:border-emerald-500/40 hover:text-emerald-500'
+            }`}
+          >
+            ↻ Update review
+          </button>
+        )}
+      </div>
+
+      {/* The filters changed: the review on screen is about other interviews */}
+      {stale && !loading && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3">
+          <p className="text-sm text-amber-700 dark:text-amber-300">
+            Filters changed — this review is still about the previous interviews. Update it for the {countText} shown now.
+          </p>
+          <button onClick={() => generate()} className="text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 px-3 py-1.5 rounded-xl transition-colors">
+            Update review
+          </button>
+        </div>
+      )}
+
+      {!data && !loading && !error && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 dark:border-slate-700/50 px-4 py-3">
+          <p className="text-sm text-slate-600 dark:text-slate-400">Get an AI review of the {countText} shown: your progress and what to practise next.</p>
+          <button onClick={() => generate()} className="text-xs font-bold text-white bg-gradient-to-r from-emerald-500 to-teal-500 px-3 py-1.5 rounded-xl hover:scale-105 transition-all">
+            Get review
+          </button>
+        </div>
+      )}
+
+      {loading && (
+        <div className="space-y-3 animate-pulse">
+          <p className="text-xs text-slate-500">Analysing your {countText}…</p>
+          {[90, 75, 85].map((w, i) => <div key={i} className="h-3 rounded bg-slate-200 dark:bg-slate-800" style={{ width: `${w}%` }} />)}
+        </div>
+      )}
+
+      {error && !loading && (
+        <div className="text-sm text-slate-500 space-y-2">
+          <p>Could not analyse your interviews right now.</p>
+          <button onClick={() => generate(true)} className="text-xs font-semibold text-emerald-500 hover:text-emerald-400">Try again</button>
+        </div>
+      )}
+
+      {data && !loading && (
+        <div className={stale ? 'opacity-50' : ''}>
+          <div className="flex items-start gap-3">
+            <span className={`text-xs font-bold px-2 py-1 rounded-lg border whitespace-nowrap ${trend.cls}`}>{trend.icon} {trend.text}</span>
+            <p className="text-slate-800 dark:text-slate-100 text-sm font-semibold leading-relaxed">{data.headline}</p>
+          </div>
+
+          {expanded && (
+            <div className="space-y-4 mt-4">
+              {data.strengths?.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-xs font-bold uppercase tracking-wide text-emerald-500">What's working</p>
+                  {data.strengths.map((s, i) => (
+                    <p key={i} className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed flex gap-2"><span className="text-emerald-500">✓</span><span>{s}</span></p>
+                  ))}
+                </div>
+              )}
+
+              {data.focus?.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-bold uppercase tracking-wide text-amber-500">Focus next</p>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {data.focus.map((f, i) => (
+                      <div key={i} className="rounded-xl border border-slate-200 dark:border-slate-700/50 bg-slate-50 dark:bg-slate-900/50 p-3">
+                        <p className="text-sm font-bold text-slate-800 dark:text-slate-100">{i + 1}. {f.area}</p>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">{f.why}</p>
+                        <p className="text-xs text-slate-700 dark:text-slate-300 mt-1.5 leading-relaxed"><span className="font-semibold text-emerald-600 dark:text-emerald-400">Try: </span>{f.how}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {data.next_step && (
+                <div className="flex items-center justify-between gap-3 border-t border-slate-200 dark:border-slate-700/40 pt-3">
+                  <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed"><span className="font-bold">Next: </span>{data.next_step}</p>
+                  <button onClick={() => onNavigate('landing')} className="flex-shrink-0 text-xs font-bold text-white bg-gradient-to-r from-emerald-500 to-teal-500 px-3 py-2 rounded-xl hover:scale-105 transition-all">
+                    Practise →
+                  </button>
+                </div>
+              )}
             </div>
-          ))}
+          )}
+
+          <button onClick={() => setExpanded(e => !e)} className="mt-3 text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:text-emerald-500">
+            {expanded ? 'Show less ▴' : 'Show full review ▾'}
+          </button>
         </div>
       )}
     </div>
   )
 }
 
-// ── Activity heatmap (30 days) ────────────────────────────────────────────────
-function ActivityHeatmap({ sessions }) {
-  const days = []
-  const now = new Date()
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date(now); d.setDate(now.getDate() - i); d.setHours(0,0,0,0)
-    days.push(d)
-  }
-
-  const byDay = {}
-  sessions.forEach(s => {
-    const d = new Date(s.created_at); d.setHours(0,0,0,0)
-    const key = d.toDateString()
-    byDay[key] = (byDay[key] || 0) + 1
-  })
-
-  const activeDays = Object.keys(byDay).length
-  const totalThisMonth = sessions.filter(s => {
-    const d = new Date(s.created_at)
-    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
-  }).length
-
-  return (
-    <div className="glass border border-slate-200 dark:border-slate-700/40 rounded-2xl p-5">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <p className="text-slate-900 dark:text-white font-bold">Activity — Last 30 Days</p>
-          <p className="text-slate-600 dark:text-slate-400 text-xs mt-0.5">{activeDays} active day{activeDays !== 1 ? 's' : ''} · {totalThisMonth} session{totalThisMonth !== 1 ? 's' : ''} this month</p>
-        </div>
-        <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
-          <span>Less</span>
-          {['bg-slate-200 dark:bg-slate-800/60','bg-emerald-500/30','bg-emerald-500/60','bg-emerald-500'].map((c,i) => (
-            <div key={i} className={`w-3.5 h-3.5 rounded-sm ${c}`} />
-          ))}
-          <span>More</span>
-        </div>
-      </div>
-      <div className="flex gap-1 flex-wrap">
-        {days.map((d, i) => {
-          const count = byDay[d.toDateString()] || 0
-          const bg = count === 0 ? 'bg-slate-200 dark:bg-slate-800/60' : count === 1 ? 'bg-emerald-500/30' : count === 2 ? 'bg-emerald-500/60' : 'bg-emerald-500'
-          return (
-            <div
-              key={i}
-              title={`${d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}: ${count} session${count !== 1 ? 's' : ''}`}
-              className={`w-6 h-6 rounded-md ${bg} cursor-default transition-colors`}
-            />
-          )
-        })}
-      </div>
-      {/* Day labels */}
-      <div className="flex justify-between mt-1.5 text-slate-400 dark:text-slate-700 text-xs px-0.5">
-        <span>{days[0].toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>
-        <span>{days[14].toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>
-        <span>Today</span>
-      </div>
-    </div>
-  )
-}
-
-// ── Filler words panel ────────────────────────────────────────────────────────
-function FillerWordsPanel({ fillers }) {
-  if (!fillers.length) return (
-    <div className="glass border border-slate-200 dark:border-slate-700/40 rounded-2xl p-5 flex flex-col justify-center items-center text-center h-full">
-      <p className="text-slate-600 dark:text-slate-400 text-sm font-semibold mb-1">🗣 Filler Words</p>
-      <p className="text-slate-600 dark:text-slate-400 text-xs">No filler word data yet.<br/>Complete interviews to track habits.</p>
-    </div>
-  )
-
-  const max = fillers[0].count
-  return (
-    <div className="glass border border-slate-200 dark:border-slate-700/40 rounded-2xl p-5">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <p className="text-slate-900 dark:text-white font-bold">🗣 Filler Words</p>
-          <p className="text-slate-600 dark:text-slate-400 text-xs mt-0.5">Most-used across all sessions</p>
-        </div>
-        <span className="text-slate-600 dark:text-slate-400 text-xs">{fillers.reduce((a,f) => a+f.count, 0)} total</span>
-      </div>
-      <div className="space-y-2.5">
-        {fillers.map((f, i) => (
-          <div key={f.word} className="space-y-1">
-            <div className="flex items-center justify-between text-xs">
-              <div className="flex items-center gap-2">
-                {i === 0 && <span className="text-red-400 font-black text-xs">#{i+1}</span>}
-                {i > 0  && <span className="text-slate-600 dark:text-slate-400 text-xs">#{i+1}</span>}
-                <span className="text-orange-300 font-semibold">"{f.word}"</span>
-              </div>
-              <span className={`font-bold ${i === 0 ? 'text-red-400' : i <= 2 ? 'text-orange-400' : 'text-slate-400'}`}>
-                ×{f.count}
-              </span>
-            </div>
-            <div className="h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all duration-700 ${i === 0 ? 'bg-red-500' : i <= 2 ? 'bg-orange-400' : 'bg-slate-500'}`}
-                style={{ width: `${(f.count / max) * 100}%` }}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
 // ── Main Dashboard ────────────────────────────────────────────────────────────
-export default function Dashboard({ onNavigate }) {
+export default function Dashboard({ onNavigate, onOpenSession }) {
   const { user } = useAuth()
   const [sessions,      setSessions]      = useState([])
-  const [fillers,       setFillers]       = useState([])
   const [loading,       setLoading]       = useState(true)
   const [refreshing,    setRefreshing]    = useState(false)
   const [lastRefreshed, setLastRefreshed] = useState(null)
+  const [filters, changeFilters]        = useSessionFilters()
 
   const refresh = useCallback(async (showSpinner = false) => {
     if (showSpinner) setRefreshing(true)
-    const [s, f] = await Promise.all([fetchSessions(), fetchFillerStats()])
-    setSessions(s)
-    setFillers(f)
+    setSessions(await fetchSessions())
     setLoading(false)
     setRefreshing(false)
     setLastRefreshed(new Date())
@@ -303,60 +386,15 @@ export default function Dashboard({ onNavigate }) {
 
   useEffect(() => { refresh() }, [refresh])
 
+  // Everything below the filters shows only the matching interviews (newest first)
+  const shown = useMemo(() => applyFilters(sessions, filters), [sessions, filters])
+
   const firstName    = user?.name?.split(' ')[0] || 'there'
-  const scored       = sessions.filter(s => s.overall_score != null)
+  const scored       = shown.filter(s => s.overall_score != null)
   const avgScore     = scored.length ? avgArr(scored.map(s => s.overall_score)) : null
   const bestSession  = scored.length ? scored.reduce((b, s) => s.overall_score > b.overall_score ? s : b) : null
-  const totalSeconds = sessions.reduce((a, s) => a + (s.duration_seconds || 0), 0)
-  const thisMonth    = sessions.filter(s => { const d = new Date(s.created_at), n = new Date(); return d.getMonth()===n.getMonth()&&d.getFullYear()===n.getFullYear() }).length
+  const totalSeconds = shown.reduce((a, s) => a + (s.duration_seconds || 0), 0)
   const streak       = calcStreak(sessions)
-
-  // ── Breakdowns ──────────────────────────────────────────────────────────────
-  const byLanguage = Object.entries(
-    sessions.reduce((acc, s) => {
-      const key = s.language || 'en-US'
-      if (!acc[key]) acc[key] = { count: 0, scores: [] }
-      acc[key].count++
-      if (s.overall_score != null) acc[key].scores.push(s.overall_score)
-      return acc
-    }, {})
-  ).map(([code, v]) => ({
-    label: langInfo(code).label,
-    flag:  langInfo(code).flag,
-    count: v.count,
-    avg:   v.scores.length ? avgArr(v.scores) : null,
-  })).sort((a, b) => b.count - a.count)
-
-  const TYPE_LABELS = { full: 'Full Interview', behavioral: 'Behavioral', technical: 'Technical', screening: 'Screening', practice: 'Practice' }
-  const byType = Object.entries(
-    sessions.reduce((acc, s) => {
-      const key = s.interview_type || 'full'
-      if (!acc[key]) acc[key] = { count: 0, scores: [] }
-      acc[key].count++
-      if (s.overall_score != null) acc[key].scores.push(s.overall_score)
-      return acc
-    }, {})
-  ).map(([type, v]) => ({
-    label: TYPE_LABELS[type] || type,
-    flag:  { full:'🎯', behavioral:'🌟', technical:'⚡', screening:'📞', practice:'🎓' }[type] || '—',
-    count: v.count,
-    avg:   v.scores.length ? avgArr(v.scores) : null,
-  })).sort((a, b) => b.count - a.count)
-
-  const byDifficulty = Object.entries(
-    sessions.reduce((acc, s) => {
-      const key = s.difficulty || 'Mid'
-      if (!acc[key]) acc[key] = { count: 0, scores: [] }
-      acc[key].count++
-      if (s.overall_score != null) acc[key].scores.push(s.overall_score)
-      return acc
-    }, {})
-  ).map(([diff, v]) => ({
-    label: diff,
-    flag:  { Junior:'🟢', Mid:'🟡', Senior:'🔴' }[diff] || '⚪',
-    count: v.count,
-    avg:   v.scores.length ? avgArr(v.scores) : null,
-  })).sort((a, b) => { const ord = { Junior:0, Mid:1, Senior:2 }; return ord[a.label]-ord[b.label] })
 
   return (
     <div className="min-h-screen dark:bg-slate-950 relative overflow-hidden">
@@ -391,14 +429,16 @@ export default function Dashboard({ onNavigate }) {
           </div>
         ) : (
           <>
-            {/* ── Step 1: Stats (4 cards) ── */}
+            <FilterBar filters={filters} onChange={changeFilters} />
+
+            {/* ── Stats ── */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <StatCard icon={<IconList className="w-4 h-4" />}    label="Sessions"      value={sessions.length}  sub={thisMonth ? `${thisMonth} this month · ${durationLabel(totalSeconds)}` : durationLabel(totalSeconds)} />
-              <StatCard icon={<IconStar className="w-4 h-4" />}    label="Avg Score"     value={avgScore ? `${to100(avgScore)}/100` : '–'} sub="Content quality" color={avgScore ? scoreColor(avgScore) : 'text-slate-500'} />
+              <StatCard icon={<IconList className="w-4 h-4" />} label="Interviews" value={shown.length} sub={`of ${sessions.length} · ${durationLabel(totalSeconds)} practised`} />
+              <StatCard icon={<IconStar className="w-4 h-4" />} label="Avg Score" value={avgScore ? `${to100(avgScore)}/100` : '–'} sub="Answer quality" color={avgScore ? scoreColor(avgScore) : 'text-slate-500'} />
               <StatCard
-                icon={<IconTrophy className="w-4 h-4" />} label="Best Session"
+                icon={<IconTrophy className="w-4 h-4" />} label="Best Interview"
                 value={bestSession ? `${to100(bestSession.overall_score)}/100` : '–'}
-                sub={bestSession ? (bestSession.role?.split('–')[0]?.trim() || 'Interview') : 'No data yet'}
+                sub={bestSession ? `${formatShort(bestSession.created_at)} · ${bestSession.role?.split('–')[0]?.trim() || 'Interview'}` : 'No data yet'}
                 color="text-amber-400"
               />
               <StatCard
@@ -409,24 +449,24 @@ export default function Dashboard({ onNavigate }) {
               />
             </div>
 
-            {/* ── Step 3: Charts (score progression + skill radar) ── */}
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-              <div className="lg:col-span-3"><ScoreChart sessions={sessions} /></div>
-              <div className="lg:col-span-2"><SkillBenchmark sessions={sessions} /></div>
-            </div>
+            {shown.length === 0 ? (
+              <div className="glass border border-slate-200 dark:border-slate-700/40 rounded-2xl p-10 text-center space-y-3">
+                <p className="text-sm text-slate-500">You have no interviews with these filters yet.</p>
+                <button onClick={() => onNavigate('landing')} className="text-sm font-semibold text-emerald-500 hover:text-emerald-400">Practise one now →</button>
+              </div>
+            ) : (
+              <>
+                <ScoreChart sessions={shown} onOpenSession={onOpenSession} />
 
-            {/* ── Step 6: Activity heatmap ── */}
-            <ActivityHeatmap sessions={sessions} />
+                {/* ── Skills: what you said, and how you came across on camera ── */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <RadarCard title="Answer Skills" subtitle="Content scored by the AI, and how fluently you spoke" axes={ANSWER_AXES} sessions={shown} />
+                  <RadarCard title="Body Language" subtitle="Measured by the webcam during the interview" axes={VIDEO_AXES} sessions={shown} />
+                </div>
 
-            {/* ── Step 2: Breakdowns (language / type / difficulty) ── */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <BreakdownCard title="By Language"   icon={<IconGlobe className="w-4 h-4" />}    rows={byLanguage} />
-              <BreakdownCard title="By Type"       icon={<IconTarget className="w-4 h-4" />}   rows={byType} />
-              <BreakdownCard title="By Difficulty" icon={<IconBarChart className="w-4 h-4" />} rows={byDifficulty} />
-            </div>
-
-            {/* ── Step 4: Filler words ── */}
-            <FillerWordsPanel fillers={fillers} />
+                <InsightsCard sessions={shown} filtered={isFiltered(filters)} onNavigate={onNavigate} />
+              </>
+            )}
 
             {/* ── Refresh footer ── */}
             <div className="flex items-center justify-between pt-2">

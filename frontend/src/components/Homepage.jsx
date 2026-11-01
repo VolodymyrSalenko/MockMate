@@ -60,8 +60,8 @@ const FEATURES = [
         <rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>
       </svg>
     ),
-    title: '5 Interview Modes',
-    desc: 'Full interview, behavioral, technical, screening call, or focused practice by topic.',
+    title: '3 Interview Modes',
+    desc: 'Full interview, behavioral (STAR) or technical, built from a real job description.',
     pro: false,
   },
   {
@@ -102,7 +102,7 @@ const STEPS = [
   {
     n: '1',
     title: 'Set up your session',
-    desc: 'Paste a job description or pick a practice topic. Choose difficulty, language, and interview type.',
+    desc: 'Paste a job description or pick a template. Choose difficulty, language, and interview type.',
   },
   {
     n: '2',
@@ -211,7 +211,7 @@ export default function Homepage({ onLogin, onRegister }) {
           className="flex flex-wrap items-center justify-center gap-5 sm:gap-8 mt-10 text-xs text-slate-500 dark:text-slate-500 font-semibold uppercase tracking-wider animate-fade-up"
           style={{ animationDelay: '0.2s' }}
         >
-          {['5 Interview Modes', '12 Practice Topics', '3 Languages', 'Real-time AI Scoring'].map(s => (
+          {['3 Interview Modes', '3 Levels', '3 Languages', 'Real-time AI Scoring'].map(s => (
             <span key={s} className="flex items-center gap-1.5">
               <span className="w-1 h-1 rounded-full bg-emerald-400/70" />
               {s}

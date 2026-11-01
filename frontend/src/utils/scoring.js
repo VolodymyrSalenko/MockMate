@@ -39,8 +39,9 @@ export function difficultyBadge(d) {
 export function typeBadge(t) {
   const map = {
     full:       '🎯 Full',
-    behavioral: '🌟 Behavioral',
+    behavioral: '🌟 Behavioral (STAR)',
     technical:  '⚡ Technical',
+    // Types that are no longer offered, for older sessions
     screening:  '📞 Screening',
     practice:   '🎓 Practice',
   }

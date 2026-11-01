@@ -20,11 +20,11 @@ from prompts import (
     PARSE_JD_PROMPT,
     DEBRIEF_PROMPT,
     INTERVIEW_TYPE_PROMPTS,
-    QUESTION_BANK_PROMPT,
     RESPOND_DECISION_PROMPT,
     LEVEL_EXPECTATIONS,
     CV_PARSE_PROMPT,
     CV_ANALYSIS_PROMPT,
+    INSIGHTS_PROMPT,
     language_instruction,
 )
 from helpers import (
@@ -35,7 +35,7 @@ from helpers import (
     extract_text_from_pdf,
     extract_text_from_docx,
 )
-from database import init_db, upsert_user, save_session, get_sessions, get_session_detail, save_cv_profile, get_cv_profile, delete_session, add_answer_retry, get_connection, save_job_description, get_job_descriptions, delete_job_description
+from database import init_db, upsert_user, save_session, get_sessions, get_session_detail, save_cv_profile, get_cv_profile, delete_session, add_answer_retry, get_connection, save_job_description, get_job_descriptions, delete_job_description, get_sessions_for_insights
 from billing import router as billing_router
 from admin import router as admin_router
 from url_reader import fetch_job_page, UrlReadError
@@ -208,14 +208,6 @@ class ParseJDRequest(BaseModel):
     difficulty: Optional[str] = "Mid"
     company_name: Optional[str] = Field(None, max_length=200)
     interview_type: Optional[str] = "full"
-    language: Optional[str] = "en-US"
-    question_count: int = Field(DEFAULT_QUESTIONS, ge=MIN_QUESTIONS, le=MAX_QUESTIONS)
-    interviewer: Optional[str] = Field(DEFAULT_INTERVIEWER, max_length=20)
-
-
-class QuestionBankRequest(BaseModel):
-    category: str = Field(..., max_length=200)
-    difficulty: Optional[str] = "Mid"
     language: Optional[str] = "en-US"
     question_count: int = Field(DEFAULT_QUESTIONS, ge=MIN_QUESTIONS, le=MAX_QUESTIONS)
     interviewer: Optional[str] = Field(DEFAULT_INTERVIEWER, max_length=20)
@@ -478,56 +470,6 @@ async def parse_jd(req: ParseJDRequest, current_user: dict = Depends(get_current
         "requirements": normalize_requirements(data.get("requirements")),
         "intro_message": intro_message,
         "cv_summary": cv_summary,
-    }
-
-
-@app.post("/question-bank")
-@limiter.limit("10/minute")
-async def question_bank(request: Request, req: QuestionBankRequest, current_user: dict = Depends(get_current_user)):
-    if not req.category.strip():
-        raise HTTPException(status_code=400, detail="category is required")
-
-    difficulty = req.difficulty or "Mid"
-    difficulty_context = DIFFICULTY_QUESTION_CONTEXT.get(difficulty, DIFFICULTY_QUESTION_CONTEXT["Mid"])
-
-    interviewer_name = get_interviewer(req.interviewer)["name"]
-    prompt = QUESTION_BANK_PROMPT.format(
-        category=req.category.strip(),
-        difficulty=difficulty,
-        difficulty_context=difficulty_context,
-        question_count=req.question_count,
-        language_instruction=language_instruction(req.language or "en-US"),
-        interviewer_name=interviewer_name,
-    )
-
-    n = req.question_count
-    try:
-        raw = chat(client, MODEL_FAST, [{"role": "user", "content": prompt}], max_tokens=800 + 150 * n, effort="off")
-        data = extract_json(raw)
-    except Exception:
-        raise HTTPException(status_code=500, detail="Failed to generate questions — please try again")
-
-    questions, question_plan = normalize_questions(data.get("questions"), n)
-    if len(questions) < n:
-        raise HTTPException(status_code=500, detail="Could not generate enough questions for this category — please try again")
-
-    role = data.get("role", f"{req.category} Practice")
-    intro_message = data.get("intro_message") or (
-        f"Hi, I am {interviewer_name}. Today we are practising {req.category} questions at {difficulty} level. "
-        f"I will ask you {questions_phrase(n)}. Take your time and speak clearly. "
-        f"Here is your first question. {questions[0]}"
-    )
-    intro_message = with_first_question(intro_message, questions[0])
-
-    return {
-        "role": role,
-        "candidate_name": "Candidate",
-        "questions": questions,
-        "question_plan": question_plan,
-        "requirements": [],
-        "intro_message": intro_message,
-        "cv_summary": None,
-        "difficulty": difficulty,
     }
 
 
@@ -966,6 +908,39 @@ def save_retry(session_id: int, question_index: int, req: RetryIn, current_user:
     if not add_answer_retry(session_id, str(current_user["id"]), question_index, retry):
         raise HTTPException(status_code=404, detail="Answer not found")
     return {"saved": True}
+
+
+class InsightsRequest(BaseModel):
+    session_ids: List[int] = Field(..., min_length=1, max_length=50)
+
+
+@app.post("/insights")
+@limiter.limit("20/minute")
+def insights(request: Request, req: InsightsRequest, current_user: dict = Depends(get_current_user)):
+    """An AI review of the interviews shown on the dashboard: progress, strengths, what to practise next."""
+    user_id = str(current_user["id"])
+    check_ai_consent(user_id)
+    sessions = get_sessions_for_insights(user_id, req.session_ids)
+    if not sessions:
+        raise HTTPException(status_code=404, detail="No interviews found")
+
+    def line(s):
+        return json.dumps({
+            "date": s["created_at"].strftime("%Y-%m-%d"), "role": s["role"], "level": s["difficulty"],
+            "type": s["interview_type"], "language": s["language"], "questions": s["questions"],
+            "minutes": round((s["duration_seconds"] or 0) / 60, 1), "score": s["overall_score"],
+            "answers": s["skills"], "delivery": s["delivery"], "fillers": s["fillers"],
+            "body": {"eye_contact": s["eye_contact_pct"], "stability": s["head_stability_pct"], **(s["video"] or {})},
+            "strongest": s["top_strength"], "improve": s["top_improvement"], "next_round": s["hiring_decision"],
+        }, ensure_ascii=False, default=str)
+
+    prompt = INSIGHTS_PROMPT.replace("{sessions}", "\n".join(line(s) for s in sessions))
+    try:
+        raw = chat(client, MODEL_FEEDBACK, [{"role": "user", "content": prompt}], max_tokens=4000, effort="medium")
+        data = extract_json(raw)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Could not analyse your progress — please try again")
+    return {**data, "count": len(sessions)}
 
 
 @app.get("/job-descriptions")

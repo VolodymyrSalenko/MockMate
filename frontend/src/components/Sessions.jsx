@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { fetchSessions, fetchSessionDetail, deleteSession } from '../utils/api'
 import { getRecording, deleteRecording } from '../utils/recordingStore'
 import Debrief from './Debrief'
+import { FilterBar, applyFilters, useSessionFilters } from './SessionFilters'
 import { durationLabel } from '../utils/speechAnalytics'
 import {
   scoreBg,
@@ -32,7 +33,7 @@ function reportFromColumns(detail) {
   }
 }
 
-function SavedSession({ session, onBack }) {
+function SavedSession({ session, onBack, backLabel }) {
   const [detail,    setDetail]    = useState(null)
   const [failed,    setFailed]    = useState(false)
   const [recording, setRecording] = useState(null)
@@ -72,6 +73,7 @@ function SavedSession({ session, onBack }) {
     <Debrief
       saved={{ id: detail.id, createdAt: detail.created_at, debrief }}
       onBack={onBack}
+      backLabel={backLabel}
       qaPairs={report.qa_pairs || []}
       role={detail.role}
       difficulty={detail.difficulty}
@@ -158,16 +160,23 @@ function SessionCard({ session, index, onOpen, onDelete }) {
 }
 
 // ── Main Sessions page ────────────────────────────────────────────────────────
-export default function Sessions({ onNavigate }) {
+export default function Sessions({ onNavigate, openId, onOpened }) {
   const [sessions, setSessions] = useState([])
   const [loading,  setLoading]  = useState(true)
-  const [filter,   setFilter]   = useState('All')
+  const [filters,  changeFilters] = useSessionFilters()
   const [search,   setSearch]   = useState('')
   const [opened,   setOpened]   = useState(null)
+  const [fromDashboard, setFromDashboard] = useState(false)
 
   useEffect(() => {
-    fetchSessions().then(data => { setSessions(data); setLoading(false) })
-  }, [])
+    fetchSessions().then(data => {
+      setSessions(data); setLoading(false)
+      // Opened from a point on the dashboard chart: show that interview's feedback straight away
+      const picked = openId && data.find(s => s.id === openId)
+      if (picked) { setOpened(picked); setFromDashboard(true) }
+      if (openId) onOpened?.()
+    })
+  }, [])   // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDelete = async (id) => {
     if (await deleteSession(id)) {
@@ -176,10 +185,11 @@ export default function Sessions({ onNavigate }) {
     }
   }
 
-  if (opened) return <SavedSession session={opened} onBack={() => setOpened(null)} />
+  if (opened) return fromDashboard
+    ? <SavedSession session={opened} onBack={() => onNavigate('dashboard')} backLabel="← Back to dashboard" />
+    : <SavedSession session={opened} onBack={() => setOpened(null)} />
 
-  const visible = sessions
-    .filter(s => filter === 'All' || s.difficulty === filter)
+  const visible = applyFilters(sessions, filters)
     .filter(s => !search || (s.role || '').toLowerCase().includes(search.toLowerCase()))
 
   return (
@@ -220,28 +230,16 @@ export default function Sessions({ onNavigate }) {
           </div>
         ) : (
           <>
-            {/* Filters + search */}
-            <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-              <div className="flex gap-1.5">
-                {['All', 'Junior', 'Mid', 'Senior'].map(f => (
-                  <button key={f} onClick={() => setFilter(f)}
-                    className={`text-xs px-3 py-1.5 rounded-xl font-semibold transition-all ${
-                      filter === f
-                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                        : 'glass border border-slate-200 dark:border-slate-700/40 text-slate-500 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-                    }`}>
-                    {f}
-                  </button>
-                ))}
-              </div>
+            {/* The same filters as the dashboard, plus a search by role */}
+            <FilterBar filters={filters} onChange={changeFilters}>
               <input
                 type="text"
                 placeholder="Search by role…"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="flex-1 bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700/60 rounded-xl px-4 py-2 text-slate-600 dark:text-slate-300 placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 text-sm"
+                className="w-full sm:w-64 bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700/60 rounded-xl px-4 py-2 text-slate-600 dark:text-slate-300 placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 text-sm"
               />
-            </div>
+            </FilterBar>
 
             {/* Count */}
             <p className="text-slate-600 dark:text-slate-400 text-xs">
