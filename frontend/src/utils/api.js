@@ -172,6 +172,26 @@ export async function fetchFillerStats() {
  * @param {number} sessionId
  * @returns {Promise<boolean>}
  */
+/** Job ads the user practised with before, most recent first. */
+export async function fetchJobDescriptions() {
+  try {
+    const res = await fetch(`${BACKEND_URL}/job-descriptions`, { headers: authHeaders() })
+    return res.ok ? await res.json() : []
+  } catch {
+    return []
+  }
+}
+
+export async function deleteJobDescription(id) {
+  try {
+    const res = await fetch(`${BACKEND_URL}/job-descriptions/${id}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    })
+    return res.ok
+  } catch { return false }
+}
+
 export async function deleteSession(sessionId) {
   try {
     const res = await fetch(`${BACKEND_URL}/sessions/${sessionId}`, {

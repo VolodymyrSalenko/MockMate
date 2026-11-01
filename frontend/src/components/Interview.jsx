@@ -6,6 +6,11 @@ import { useMediaRecorder } from '../hooks/useMediaRecorder'
 import { prepareRecordingMix, addLastLineToRecording, stopLastLineInRecording } from '../utils/recordingMix'
 import { analyzeAnswer } from '../utils/speechAnalytics'
 import { EXPRESSIONS, GESTURES, ZONES, ISSUES } from '../utils/bodyLanguage'
+import { feedbackRequestBody, requestFeedback } from '../utils/feedbackRequest'
+
+// Seconds for one answer; the last few show a reminder to wrap up
+const ANSWER_LIMIT = 120
+const WRAP_UP_AT   = 15
 import { getStoredToken } from '../context/AuthContext'
 import { getInterviewer, getVoice } from '../utils/interviewers'
 
@@ -43,10 +48,10 @@ const EndIcon = () => (
 
 const WAVEFORM_DURATIONS = [0.45, 0.38, 0.52, 0.40, 0.48, 0.35, 0.50, 0.42, 0.55, 0.38, 0.45, 0.41, 0.49]
 
-function CountdownRing({ seconds, total = 90, visible }) {
+function CountdownRing({ seconds, total = ANSWER_LIMIT, visible }) {
   const r = 44, circ = 2 * Math.PI * r
   const offset = circ * (1 - seconds / total)
-  const color  = seconds > 20 ? '#10b981' : seconds > 10 ? '#f59e0b' : '#ef4444'
+  const color  = seconds > WRAP_UP_AT ? '#10b981' : seconds > 5 ? '#f59e0b' : '#ef4444'
   if (!visible) return null
   return (
     <svg className="absolute inset-0 w-full h-full" viewBox="0 0 96 96" style={{ transform: 'rotate(-90deg)' }}>
@@ -258,9 +263,13 @@ const YouTile = forwardRef(function YouTile({ stream, metrics, listening, onTurn
 })
 
 // ── Transcript slide-in panel ────────────────────────────────────────────────
+// A column beside the call on wide screens; on smaller ones it slides over the call
 function TranscriptPanel({ log, interviewerName, onClose }) {
+  const endRef = useRef(null)
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }) }, [log.length])
+
   return (
-    <div className="fixed inset-y-0 inset-x-0 sm:inset-x-auto sm:right-0 z-40 sm:w-96 glass bg-white/95 dark:bg-slate-950/95 border-l border-slate-200 dark:border-slate-700/50 flex flex-col shadow-2xl animate-fade-up"
+    <div className="fixed inset-y-0 inset-x-0 sm:inset-x-auto sm:right-0 z-40 sm:w-96 lg:relative lg:inset-auto lg:z-10 lg:w-96 lg:flex-shrink-0 glass bg-white/95 dark:bg-slate-950/95 lg:bg-white/60 lg:dark:bg-slate-950/40 border-l border-slate-200 dark:border-slate-700/50 flex flex-col shadow-2xl lg:shadow-none animate-fade-up"
       style={{ animationDuration: '0.25s' }}>
       <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-700/40">
         <span className="text-slate-900 dark:text-white font-bold text-sm">📝 Full conversation</span>
@@ -278,6 +287,7 @@ function TranscriptPanel({ log, interviewerName, onClose }) {
         {log.length === 0 && (
           <p className="text-slate-600 text-xs">Transcript will appear here as the interview progresses.</p>
         )}
+        <div ref={endRef} />
       </div>
     </div>
   )
@@ -299,11 +309,13 @@ export default function Interview({ sessionData, onComplete, onExit }) {
   const [status,          setStatus]         = useState('speaking')
   const [error,           setError]          = useState('')
   const [introPlayed,     setIntroPlayed]    = useState(false)
-  const [countdown,       setCountdown]      = useState(90)
+  const [countdown,       setCountdown]      = useState(ANSWER_LIMIT)
+  const [preparingFeedback, setPreparingFeedback] = useState(false)
+  const cutOffRef = useRef(false)   // the answer was stopped by the time limit
 
   // New state
   const [elapsedSeconds,  setElapsedSeconds]  = useState(0)
-  const [showTranscript,  setShowTranscript]  = useState(false)
+  const [showTranscript,  setShowTranscript]  = useState(() => window.matchMedia?.('(min-width: 1024px)').matches ?? false)
   const [webcamStream,    setWebcamStream]    = useState(null)
   const [webcamError,     setWebcamError]     = useState('')
   const [showEndDialog,   setShowEndDialog]   = useState(false)
@@ -373,9 +385,9 @@ export default function Interview({ sessionData, onComplete, onExit }) {
 
   // The interviewer's lips move only while sound is actually playing, not while the audio is still loading
   const [audioPlaying, setAudioPlaying] = useState(false)
-  const say = useCallback((text, onEnd) => {
+  const say = useCallback((text, onEnd, onStart) => {
     setAudioPlaying(false)
-    speak(text, () => { setAudioPlaying(false); onEnd?.() }, () => setAudioPlaying(true))
+    speak(text, () => { setAudioPlaying(false); onEnd?.() }, () => { setAudioPlaying(true); onStart?.() })
   }, [speak])
 
   // Kick off TTS fetch for the intro immediately on first render — before any useEffect fires
@@ -448,7 +460,7 @@ export default function Interview({ sessionData, onComplete, onExit }) {
         return
       }
 
-      const updatedPairs = [...qaPairs, { question: questions[idx], answer: transcript, analytics, ...(followupRef.current || {}) }]
+      const updatedPairs = [...qaPairs, { question: questions[idx], answer: transcript, analytics, ...(followupRef.current || {}), ...(cutOffRef.current ? { cut_off: true } : {}) }]
       followupRef.current = null
       setQaPairs(updatedPairs)
       setStatus('speaking')
@@ -462,8 +474,20 @@ export default function Interview({ sessionData, onComplete, onExit }) {
           stopRecording()
           setTimeout(() => onComplete(updatedPairs, totalDuration, faceMetricsRef.current, recordingUrlRef.current), 800)
         }
-        const fallbackTimer = setTimeout(complete, 12000)
-        say(reply, () => { clearTimeout(fallbackTimer); complete() })
+        // Start the feedback now, while the interviewer says goodbye, so it is ready sooner
+        const body = feedbackRequestBody({
+          qaPairs: updatedPairs, questionPlan: question_plan || [], role, language, difficulty,
+          interviewType: sessionData.interview_type || 'full',
+          requirements: sessionData.requirements || [], cvSummary: cv_summary || null,
+        })
+        if (body) requestFeedback(body).catch(() => {})   // the feedback screen retries on failure
+        setPreparingFeedback(true)
+        // Let the goodbye finish. If the audio never reports its end, move on anyway:
+        // a little after it should have finished, or after 30 s if it never starts
+        let fallbackTimer = setTimeout(complete, 30000)
+        const spokenSeconds = reply.split(/\s+/).length * 0.5 + 3
+        say(reply, () => { clearTimeout(fallbackTimer); complete() },
+          () => { clearTimeout(fallbackTimer); fallbackTimer = setTimeout(complete, spokenSeconds * 1000) })
       } else {
         let advanced = false
         const advance = () => {
@@ -493,13 +517,14 @@ export default function Interview({ sessionData, onComplete, onExit }) {
   useEffect(() => {
     if (isListening) {
       stopLastLineInRecording()
-      setCountdown(90)
+      setCountdown(ANSWER_LIMIT)
+      cutOffRef.current = false
       countdownIntervalRef.current = setInterval(() => {
-        setCountdown(prev => { if (prev <= 1) { stop(); return 90 } return prev - 1 })
+        setCountdown(prev => { if (prev <= 1) { cutOffRef.current = true; stop(); return ANSWER_LIMIT } return prev - 1 })
       }, 1000)
     } else {
       clearInterval(countdownIntervalRef.current)
-      setCountdown(90)
+      setCountdown(ANSWER_LIMIT)
     }
     return () => clearInterval(countdownIntervalRef.current)
   }, [isListening, stop])
@@ -589,6 +614,8 @@ export default function Interview({ sessionData, onComplete, onExit }) {
   const isSpeaking  = status === 'speaking'
   const isThinking  = status === 'thinking'
   const progressPct = Math.round((currentQuestionIndex / questions.length) * 100)
+  const questionNumber = Math.min(currentQuestionIndex + 1, questions.length)
+  const questionsLeft  = questions.length - questionNumber
 
   // Captions: the interviewer's latest line and your answer to it
   const lastInterviewerIdx = conversationLog.map(m => m.role).lastIndexOf('assistant')
@@ -610,7 +637,7 @@ export default function Interview({ sessionData, onComplete, onExit }) {
       <header className="relative z-10 glass border-b border-slate-200 dark:border-slate-700/50 px-4 py-3 flex flex-col gap-2">
         <div className="flex items-center justify-between gap-3">
           {/* Left: logo + meta */}
-          <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
             <span className="font-black text-lg flex-shrink-0">
               <span className="text-slate-900 dark:text-white">Mock</span><span className="gradient-text">Mate</span>
             </span>
@@ -618,22 +645,28 @@ export default function Interview({ sessionData, onComplete, onExit }) {
             <span className="hidden sm:block text-slate-600 dark:text-slate-400 text-sm truncate max-w-[260px]">— {role}</span>
           </div>
 
-          {/* Right: question progress + timer */}
-          <div className="flex items-center gap-3 flex-shrink-0">
-            <div className="flex items-center gap-2">
-              <span className="text-slate-600 dark:text-slate-400 text-xs font-semibold">
-                Q{Math.min(currentQuestionIndex + 1, questions.length)}/{questions.length}
+          {/* Middle: which question this is and how many are left, large enough to read at a glance */}
+          <div className="flex flex-col items-center gap-1 flex-shrink-0">
+            <p className="text-slate-900 dark:text-white text-base sm:text-xl font-black leading-none whitespace-nowrap">
+              Question <span className="text-emerald-500">{questionNumber}</span>
+              <span className="text-slate-400 dark:text-slate-500 font-bold"> of {questions.length}</span>
+            </p>
+            <div className="flex items-center gap-1.5">
+              {questions.map((_, i) => (
+                <div key={i} className={`rounded-full transition-all duration-500 ${
+                  i < currentQuestionIndex   ? 'w-2.5 h-2.5 bg-emerald-400' :
+                  i === currentQuestionIndex ? 'w-3 h-3 bg-emerald-400 ring-2 ring-emerald-400/30' :
+                  'w-2.5 h-2.5 bg-slate-300 dark:bg-slate-700'
+                }`} />
+              ))}
+              <span className="hidden sm:inline text-xs font-semibold text-slate-500 ml-1">
+                {questionsLeft === 0 ? 'last question' : `${questionsLeft} left`}
               </span>
-              <div className="hidden sm:flex gap-1.5">
-                {questions.map((_, i) => (
-                  <div key={i} className={`rounded-full transition-all duration-500 ${
-                    i < currentQuestionIndex   ? 'w-2 h-2 bg-emerald-400' :
-                    i === currentQuestionIndex ? 'w-2.5 h-2.5 bg-emerald-400 ring-2 ring-emerald-400/30' :
-                    'w-2 h-2 bg-slate-300 dark:bg-slate-700'
-                  }`} />
-                ))}
-              </div>
             </div>
+          </div>
+
+          {/* Right: timer */}
+          <div className="flex items-center justify-end gap-3 flex-1 min-w-0">
             <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-500 text-xs font-mono bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/40 rounded-full px-2.5 py-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
               {fmtTime(elapsedSeconds)}
@@ -657,7 +690,8 @@ export default function Interview({ sessionData, onComplete, onExit }) {
         </div>
       )}
 
-      <div className="flex-1 flex flex-col overflow-hidden relative z-10">
+      <div className="flex-1 flex overflow-hidden relative z-10">
+      <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {/* ── Video tiles: the interviewer and you, side by side like a video call ── */}
         {/* Width is capped by screen height so both tiles and the captions fit */}
         <div className="w-full mx-auto px-3 sm:px-6 pt-3 sm:pt-5" style={{ maxWidth: 'min(72rem, calc(150vh - 6rem))' }}>
@@ -695,7 +729,7 @@ export default function Interview({ sessionData, onComplete, onExit }) {
               </div>
             )}
 
-            {conversationLog.length > 1 && (
+            {conversationLog.length > 1 && !showTranscript && (
               <button
                 onClick={() => setShowTranscript(true)}
                 className="text-xs font-semibold text-slate-500 hover:text-emerald-500 transition-colors"
@@ -717,9 +751,12 @@ export default function Interview({ sessionData, onComplete, onExit }) {
           )}
 
           <p className={`text-xs font-semibold tracking-wide transition-colors duration-300 text-center ${
-            isListening ? 'text-red-400' : isSpeaking ? 'text-slate-500' : isThinking ? 'text-yellow-500' : 'text-slate-500'
+            isListening && countdown <= WRAP_UP_AT ? 'text-amber-500' : isListening ? 'text-red-400' :
+            preparingFeedback ? 'text-emerald-500' : isSpeaking ? 'text-slate-500' : isThinking ? 'text-yellow-500' : 'text-slate-500'
           }`}>
-            {isListening ? `${countdown}s remaining — release the mic or press Space to send` :
+            {isListening && countdown <= WRAP_UP_AT ? `${countdown}s left — time to finish your answer` :
+             isListening ? `${countdown}s remaining — release the mic or press Space to send` :
+             preparingFeedback ? `⏳ ${interviewer.name} is wrapping up · preparing your feedback…` :
              isSpeaking  ? `${interviewer.name} is speaking…` :
              isThinking  ? 'Processing your answer…' :
              'Hold the mic to answer · or press Space to start / stop'}
@@ -741,7 +778,7 @@ export default function Interview({ sessionData, onComplete, onExit }) {
 
             {/* Mic — primary action */}
             <div className="relative w-16 h-16 sm:w-[72px] sm:h-[72px] flex items-center justify-center">
-              <CountdownRing seconds={countdown} total={90} visible={isListening} />
+              <CountdownRing seconds={countdown} total={ANSWER_LIMIT} visible={isListening} />
               <button
                 onMouseDown={handleMicDown} onMouseUp={handleMicUp}
                 onTouchStart={(e) => { e.preventDefault(); handleMicDown() }}
@@ -787,8 +824,9 @@ export default function Interview({ sessionData, onComplete, onExit }) {
         </div>
       </div>
 
-      {/* Transcript panel */}
+      {/* Transcript: beside the call on wide screens */}
       {showTranscript && <TranscriptPanel log={conversationLog} interviewerName={interviewer.name} onClose={() => setShowTranscript(false)} />}
+      </div>
 
       {showEndDialog && (
         <EndInterviewDialog

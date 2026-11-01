@@ -27,8 +27,16 @@ def trim_to_words(text: str, max_words: int) -> str:
     return " ".join(words[:max_words]) + "..."
 
 
-def chat(client, model: str, messages: list, max_tokens: int, temperature: float | None = None) -> str:
-    extra = {"temperature": temperature} if temperature is not None else {}
+def chat(client, model: str, messages: list, max_tokens: int, effort: str | None = None) -> str:
+    # effort: how much the model thinks before answering (OpenRouter's reasoning setting).
+    # "off" for quick replies and extraction, where thinking only adds delay; thinking counts
+    # toward max_tokens, so calls that think need room for it.
+    if effort == "off":
+        extra = {"extra_body": {"reasoning": {"enabled": False}}}
+    elif effort:
+        extra = {"extra_body": {"reasoning": {"effort": effort}}}
+    else:
+        extra = {}
     response = client.chat.completions.create(
         model=model,
         max_tokens=max_tokens,

@@ -56,14 +56,14 @@ function freshRecent() {
 
 // The red-zone moment happening right now, for the live badge: the same rules as the
 // feedback report, with a short hold so the badge does not blink
-function liveIssue(recent, { now, answering, eyeOk, headOk, restless, gesture }) {
-  recent.away   = answering && !eyeOk  ? recent.away + 1   : 0
-  recent.turned = answering && !headOk ? recent.turned + 1 : 0
+function liveIssue(recent, { now, answering, eyeOk, headOk, restless }) {
+  // A brief glance back does not reset the count, as in the report
+  recent.away   = answering && !eyeOk  ? recent.away + 1   : Math.max(0, recent.away - 3)
+  recent.turned = answering && !headOk ? recent.turned + 1 : Math.max(0, recent.turned - 3)
   const issue =
     restless              ? 'restless' :
-    recent.turned >= 5    ? 'turned-away' :   // about a second
-    recent.away >= 6      ? 'look-away' :     // about 1.2 seconds
-    gesture === 'shake'   ? 'shake' : null
+    recent.turned >= 10   ? 'turned-away' :   // about 2 seconds
+    recent.away >= 15     ? 'look-away' : null  // about 3 seconds
   if (issue) { recent.lastIssue = issue; recent.issueUntil = now + 1000 }
   return issue || (now < recent.issueUntil ? recent.lastIssue : null)
 }
@@ -129,7 +129,7 @@ export function useFaceAnalysis(videoRef, enabled, answeringRef) {
       const gesture        = readGesture(recent.poses.filter(p => now - p.t < 2000))
       const restless       = isRestless(recent.poses.filter(p => now - p.t < 1600))
       const answering      = !!answeringRef?.current
-      const issue          = liveIssue(recent, { now, answering, eyeOk, headOk, restless, gesture })
+      const issue          = liveIssue(recent, { now, answering, eyeOk, headOk, restless })
 
       const s = statsRef.current
       s.total++
