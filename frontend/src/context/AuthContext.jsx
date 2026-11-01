@@ -56,11 +56,29 @@ export function AuthProvider({ children }) {
       .finally(() => setLoading(false))
   }, [])
 
+  // The sign-in reply is a short profile; the full one carries the plan and what it includes
+  const loadProfile = async (t) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/auth/me`, { headers: { Authorization: `Bearer ${t}` } })
+      if (res.ok) setUser(await res.json())
+    } catch {}
+  }
+
   const login = (t, u) => {
     setCookie(TOKEN_COOKIE, t)
     setCookie(UID_COOKIE, u.id)
     setToken(t)
     setUser(u)
+    loadProfile(t)
+  }
+
+  // Try MockMate without an account: a guest gets one interview
+  const loginAsGuest = async () => {
+    const res = await fetch(`${BACKEND_URL}/auth/guest`, { method: 'POST' })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.detail || 'Could not start a trial right now')
+    login(data.token, data.user)
+    await loadProfile(data.token)
   }
 
   const logout = () => {
@@ -90,7 +108,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, updateUser, refreshUser, loading }}>
+    <AuthContext.Provider value={{ user, token, login, loginAsGuest, logout, updateUser, refreshUser, loading }}>
       {children}
     </AuthContext.Provider>
   )

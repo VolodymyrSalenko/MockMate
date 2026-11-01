@@ -11,7 +11,8 @@ import { feedbackRequestBody, requestFeedback } from '../utils/feedbackRequest'
 // Seconds for one answer; the last few show a reminder to wrap up
 const ANSWER_LIMIT = 120
 const WRAP_UP_AT   = 15
-import { getStoredToken } from '../context/AuthContext'
+import { getStoredToken, useAuth } from '../context/AuthContext'
+import { hasFeature, openUpgrade } from '../utils/plan'
 import { getInterviewer, getVoice } from '../utils/interviewers'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
@@ -204,7 +205,7 @@ function EndInterviewDialog({ answered, total, onFeedback, onLeave, onCancel }) 
 }
 
 // ── You: webcam tile (or a placeholder while the camera is off) ──────────────
-const YouTile = forwardRef(function YouTile({ stream, metrics, listening, onTurnOnCamera, className = '' }, ref) {
+const YouTile = forwardRef(function YouTile({ stream, metrics, listening, onTurnOnCamera, locked, className = '' }, ref) {
   useEffect(() => {
     if (ref.current && stream) ref.current.srcObject = stream
   }, [stream, ref])
@@ -245,12 +246,14 @@ const YouTile = forwardRef(function YouTile({ stream, metrics, listening, onTurn
           >
             <CameraIcon on={false} />
           </button>
-          <p className="hidden sm:block text-slate-600 dark:text-slate-400 text-sm font-medium">Your camera is off</p>
+          <p className="hidden sm:block text-slate-600 dark:text-slate-400 text-sm font-medium text-center">
+            {locked ? 'Video recording and body language are part of Pro' : 'Your camera is off'}
+          </p>
           <button
             onClick={onTurnOnCamera}
-            className="hidden sm:block text-emerald-600 dark:text-emerald-400 text-xs font-semibold hover:underline"
+            className={`hidden sm:block text-xs font-semibold hover:underline ${locked ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}
           >
-            Turn on camera
+            {locked ? '👑 Unlock with Pro' : 'Turn on camera'}
           </button>
         </div>
       )}
@@ -301,6 +304,8 @@ function fmtTime(s) {
 export default function Interview({ sessionData, onComplete, onExit }) {
   const { role, questions, question_plan, intro_message, cv_summary, difficulty = 'Mid', language = 'en-US' } = sessionData
   const interviewer = getInterviewer(sessionData.interviewer)
+  const { user } = useAuth()
+  const canVideo = hasFeature(user, 'video')
 
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [history,         setHistory]        = useState([])
@@ -366,6 +371,7 @@ export default function Interview({ sessionData, onComplete, onExit }) {
       setWebcamStream(null)
       setWebcamError('')
     } else {
+      if (!canVideo) { openUpgrade(); return }
       try {
         // We request both camera and microphone because the interview recording
         // should include the user's video and spoken answers.
@@ -704,6 +710,7 @@ export default function Interview({ sessionData, onComplete, onExit }) {
               metrics={faceMetrics}
               listening={isListening}
               onTurnOnCamera={toggleWebcam}
+              locked={!canVideo}
               className="!absolute top-2.5 right-2.5 w-[34%] z-10 shadow-lg sm:!relative sm:top-auto sm:right-auto sm:w-full sm:shadow-none"
             />
           </div>

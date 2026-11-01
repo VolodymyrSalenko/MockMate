@@ -16,8 +16,12 @@ from jose import jwt, JWTError
 from pydantic import BaseModel
 from rate_limit import limiter
 
+from plans import usage
 from database import (
     get_connection,
+    create_guest_user,
+    convert_guest_user,
+    merge_guest_into,
     db_set_verification_token,
     db_get_user_by_verification_token,
     db_verify_email,
@@ -42,6 +46,7 @@ ALGORITHM         = "HS256"
 TOKEN_EXPIRE_DAYS = 30
 
 bearer = HTTPBearer()
+optional_bearer = HTTPBearer(auto_error=False)   # sign-up and sign-in may come from a guest
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
@@ -286,7 +291,7 @@ def db_get_user_by_id(user_id: str) -> dict | None:
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, email, name, plan, email_verified, pending_email, ai_consent, is_admin, token_version FROM users WHERE id = %s",
+                "SELECT id, email, name, plan, email_verified, pending_email, ai_consent, is_admin, token_version, is_guest FROM users WHERE id = %s",
                 (user_id,)
             )
             row = cur.fetchone()
@@ -376,9 +381,31 @@ class ResetPasswordRequest(BaseModel):
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
+def _guest_from(credentials) -> dict | None:
+    """The guest who is signing up or in, if the request carries a guest's token."""
+    if not credentials:
+        return None
+    try:
+        user = get_current_user(credentials)
+    except HTTPException:
+        return None
+    return user if user.get("is_guest") else None
+
+
+@router.post("/guest", status_code=201)
+@limiter.limit("3/hour")
+def guest(request: Request):
+    """Try MockMate without an account: one interview, then sign up to keep going."""
+    user_id = str(uuid.uuid4())
+    create_guest_user(user_id)
+    return {"token": create_token(user_id), "user": {
+        "id": user_id, "email": None, "name": "Guest", "plan": "free", "is_guest": True, "email_verified": False,
+    }}
+
+
 @router.post("/register", status_code=201)
 @limiter.limit("5/minute")
-def register(request: Request, req: RegisterRequest):
+def register(request: Request, req: RegisterRequest, credentials: HTTPAuthorizationCredentials | None = Depends(optional_bearer)):
     email = req.email.strip().lower()
     name  = req.name.strip()
 
@@ -389,17 +416,23 @@ def register(request: Request, req: RegisterRequest):
     if db_get_user_by_email(email):
         raise HTTPException(status_code=409, detail="An account with this email already exists")
 
-    user_id = str(uuid.uuid4())
+    # A guest signing up keeps their trial interview: their row becomes the account
+    guest = _guest_from(credentials)
+    user_id = str(guest["id"]) if guest else str(uuid.uuid4())
+
+    def create(verified: bool, ver_token: str | None):
+        if guest:
+            return convert_guest_user(user_id, email, hash_password(req.password), name, verified, ver_token)
+        return db_create_user(user_id, email, hash_password(req.password), name,
+                              email_verified=verified, verification_token=ver_token)
 
     if _smtp_configured():
         ver_token = _make_token()
-        db_create_user(user_id, email, hash_password(req.password), name,
-                       email_verified=False, verification_token=ver_token)
+        create(False, ver_token)
         send_verification_email(email, name, ver_token)
         return {"needs_verification": True, "email": email}
     else:
-        user  = db_create_user(user_id, email, hash_password(req.password), name,
-                               email_verified=True)
+        user  = create(True, None)
         token = create_token(user_id)
         return {"token": token, "user": {
             "id":             str(user["id"]),
@@ -412,7 +445,7 @@ def register(request: Request, req: RegisterRequest):
 
 @router.post("/login")
 @limiter.limit("10/minute")
-def login(request: Request, req: LoginRequest):
+def login(request: Request, req: LoginRequest, credentials: HTTPAuthorizationCredentials | None = Depends(optional_bearer)):
     user = db_get_user_by_email(req.email)
     if not user or not user.get("password_hash"):
         raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -420,6 +453,11 @@ def login(request: Request, req: LoginRequest):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     if _smtp_configured() and not user.get("email_verified"):
         raise HTTPException(status_code=403, detail="Please verify your email before logging in.")
+
+    # A guest signing in to their account brings the trial interview along
+    guest = _guest_from(credentials)
+    if guest:
+        merge_guest_into(str(guest["id"]), str(user["id"]))
 
     conn = get_connection()
     try:
@@ -463,6 +501,9 @@ def me(current_user: dict = Depends(get_current_user)):
         "pending_email":  current_user.get("pending_email"),
         "ai_consent":     current_user.get("ai_consent"),
         "is_admin":       bool(current_user.get("is_admin")),
+        "is_guest":       bool(current_user.get("is_guest")),
+        # The plan's limits and what is left this month
+        "usage":          usage(current_user),
     }
 
 

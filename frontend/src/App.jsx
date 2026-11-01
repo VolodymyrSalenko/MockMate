@@ -19,13 +19,21 @@ import AIConsentModal   from './components/AIConsentModal'
 import AdminPanel       from './components/AdminPanel'
 import OnboardingModal, { shouldShowOnboarding } from './components/OnboardingModal'
 
-function TopControls({ belowHeader, user, onUpgradeClick, actionButton }) {
+function TopControls({ belowHeader, user, onUpgradeClick, onSignupClick, actionButton }) {
   const { theme, toggleTheme } = useTheme()
   const top = belowHeader ? 'top-20' : 'top-4'
   return (
     <div className={`fixed right-4 z-[9999] flex items-center gap-2 ${top}`}>
       {actionButton}
-      {user && user.plan !== 'pro' && (
+      {user?.is_guest && (
+        <button
+          onClick={onSignupClick}
+          className="flex items-center gap-1.5 px-3 h-9 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white text-xs font-bold shadow-lg shadow-emerald-500/30 transition-all whitespace-nowrap"
+        >
+          Create free account
+        </button>
+      )}
+      {user && !user.is_guest && user.plan !== 'pro' && (
         <button
           onClick={onUpgradeClick}
           className="flex items-center gap-1.5 px-3 h-9 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white text-xs font-bold shadow-lg shadow-amber-500/30 hover:shadow-amber-500/50 transition-all"
@@ -55,8 +63,25 @@ function TopControls({ belowHeader, user, onUpgradeClick, actionButton }) {
   )
 }
 
+// A guest has no account to manage yet
+function GuestSettings({ onSignup }) {
+  return (
+    <div className="p-6 sm:p-8 max-w-5xl 2xl:max-w-6xl mx-auto">
+      <div className="glass border border-slate-200 dark:border-slate-700/40 rounded-2xl p-10 text-center space-y-4">
+        <p className="text-2xl font-black text-slate-900 dark:text-white">You are trying MockMate as a guest</p>
+        <p className="text-slate-600 dark:text-slate-400 text-sm max-w-md mx-auto">
+          Create a free account to keep your interview, upload your CV and get 3 interviews every month.
+        </p>
+        <button onClick={onSignup} className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold px-6 py-2.5 rounded-xl hover:scale-105 transition-all shadow-lg shadow-emerald-500/30 text-sm">
+          Create free account
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function AppInner() {
-  const { user, loading, refreshUser } = useAuth()
+  const { user, loading, refreshUser, loginAsGuest } = useAuth()
 
   const [view,             setView]             = useState('landing')
   // A session picked on the dashboard chart, opened on the Sessions page
@@ -84,8 +109,17 @@ function AppInner() {
 
   // Show onboarding once for new users
   useEffect(() => {
-    if (user && shouldShowOnboarding()) setShowOnboarding(true)
+    if (user && !user.is_guest && shouldShowOnboarding()) setShowOnboarding(true)
   }, [user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Any page can ask for the upgrade dialog or the sign-up page (utils/plan.js)
+  useEffect(() => {
+    const upgrade = () => setShowProModal(true)
+    const signup  = () => { setAuthMode('register'); setShowAuth(true) }
+    window.addEventListener('mockmate:upgrade', upgrade)
+    window.addEventListener('mockmate:signup', signup)
+    return () => { window.removeEventListener('mockmate:upgrade', upgrade); window.removeEventListener('mockmate:signup', signup) }
+  }, [])
 
   // Wake up the Render backend immediately so it's ready when the user acts
   useEffect(() => {
@@ -169,12 +203,25 @@ function AppInner() {
     )
   }
 
-  if (!user) {
-    if (showAuth) return <><TopControls /><Auth defaultMode={authMode} /></>
+  // Signed out, or a guest who chose to sign up. The same tree in both cases, so the
+  // "check your email" screen stays when a guest's sign-up signs them out.
+  if (!user || (user.is_guest && showAuth)) {
+    if (showAuth) return (
+      <>
+        <TopControls />
+        {user ? (
+          <button onClick={() => setShowAuth(false)} className="fixed top-4 left-4 z-[9999] text-sm font-semibold text-slate-500 hover:text-emerald-500 transition-colors">
+            ← Back to MockMate
+          </button>
+        ) : null}
+        <Auth defaultMode={authMode} />
+      </>
+    )
     return (
       <Homepage
         onLogin={() => { setAuthMode('login'); setShowAuth(true) }}
         onRegister={() => { setAuthMode('register'); setShowAuth(true) }}
+        onTryFree={async () => { await loginAsGuest(); setView('landing') }}
       />
     )
   }
@@ -186,6 +233,7 @@ function AppInner() {
     setFaceMetrics(null)
     setRecording(null)
     setView('interview')
+    refreshUser()   // one interview fewer left
   }
 
   const handleComplete = (pairs, totalDuration, metrics, recordingData) => {
@@ -214,6 +262,7 @@ function AppInner() {
         belowHeader={view === 'feedback'}
         user={user}
         onUpgradeClick={() => setShowProModal(true)}
+        onSignupClick={() => { setAuthMode('register'); setShowAuth(true) }}
         actionButton={
           (view === 'dashboard' || view === 'sessions') ? (
             <button
@@ -273,10 +322,10 @@ function AppInner() {
       }`}>
         {view === 'dashboard' && <Dashboard  onNavigate={setView} onOpenSession={(id) => { setOpenSessionId(id); setView('sessions') }} />}
         {view === 'sessions'  && <Sessions   onNavigate={setView} openId={openSessionId} onOpened={() => setOpenSessionId(null)} />}
-        {view === 'settings'  && <Settings initialTab={settingsTab} />}
+        {view === 'settings'  && (user.is_guest ? <GuestSettings onSignup={() => { setAuthMode('register'); setShowAuth(true) }} /> : <Settings initialTab={settingsTab} />)}
         {view === 'admin'     && user?.is_admin && <AdminPanel />}
         {view === 'cv'        && <CVProfile user={user} onUpgrade={() => setShowProModal(true)} />}
-        {view === 'landing'   && <Landing   onStart={handleStart} user={user} onUpgrade={() => setShowProModal(true)} />}
+        {view === 'landing'   && <Landing   onStart={handleStart} user={user} onUpgrade={() => setShowProModal(true)} onLimit={refreshUser} />}
         {view === 'interview' && sessionData && (
           <Interview sessionData={sessionData} onComplete={handleComplete} onExit={handleRetry} />
         )}

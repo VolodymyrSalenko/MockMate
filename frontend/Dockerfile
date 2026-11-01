@@ -7,9 +7,7 @@ COPY . .
 
 # VITE_ vars are baked into the JS bundle at build time
 ARG VITE_BACKEND_URL=http://localhost:8000
-ARG VITE_ELEVENLABS_API_KEY
 ENV VITE_BACKEND_URL=$VITE_BACKEND_URL
-ENV VITE_ELEVENLABS_API_KEY=$VITE_ELEVENLABS_API_KEY
 
 RUN npm run build
 

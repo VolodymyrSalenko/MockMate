@@ -23,7 +23,9 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/mockmate
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
-      ELEVENLABS_API_KEY: ${VITE_ELEVENLABS_API_KEY}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY}
+      JWT_SECRET: ${JWT_SECRET}
+      FRONTEND_URL: http://localhost:3000
     depends_on:
       db:
         condition: service_healthy
@@ -33,7 +35,6 @@ services:
       context: ./frontend
       args:
         VITE_BACKEND_URL: http://localhost:8000
-        VITE_ELEVENLABS_API_KEY: ${VITE_ELEVENLABS_API_KEY}
     restart: unless-stopped
     ports:
       - "3000:80"

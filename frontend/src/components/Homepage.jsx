@@ -1,3 +1,6 @@
+import { useState, useRef } from 'react'
+import { PRO_PRICE } from '../utils/plan'
+import { INTERVIEWERS, voiceSample } from '../utils/interviewers'
 import { useTheme } from '../context/ThemeContext'
 
 function BgOrbs() {
@@ -79,23 +82,22 @@ const FEATURES = [
 ]
 
 const FREE_FEATURES = [
-  '3 mock interviews per day',
-  'English language only',
-  'AI scoring & written feedback',
-  'Speech analytics (WPM, fillers)',
-  '3 interview modes',
-  'Session history & dashboard',
+  '1 interview without signing up',
+  '3 interviews a month with a free account',
+  'English, with your browser\'s voice',
+  'AI feedback after every interview',
+  'Speech analytics and your dashboard',
+  'All interview types and levels',
 ]
 
 const PRO_FEATURES = [
-  '20 AI mock interviews per month',
-  'English, French & German',
-  'Up to 5 resume analyses with Professional AI',
-  'All 5 interview modes',
-  'Facial recognition & body language analysis',
-  'Detailed feedback with ideal answers',
-  'Video recording & playback',
-  'Priority AI responses',
+  '30 interviews a month',
+  'English, German and French',
+  'Natural interviewer voices (Alex and Emma)',
+  'Video recording with body language analysis',
+  "Coach's review of your progress",
+  'Resume analysis',
+  'Retry each question up to 5 times',
 ]
 
 const STEPS = [
@@ -124,7 +126,66 @@ function CheckIcon({ color = 'emerald' }) {
   )
 }
 
-export default function Homepage({ onLogin, onRegister }) {
+const INTERVIEWER_BIOS = {
+  alex: 'Calm and structured. Asks a follow-up when your example or result is missing.',
+  emma: 'Warm and encouraging. Helps you bring out your best stories.',
+}
+
+// Alex and Emma in a circle, listening as they do in the interview, with a voice sample
+function Interviewers() {
+  const audioRef = useRef(null)
+  const [playing, setPlaying] = useState(null)
+  const play = (i) => {
+    audioRef.current?.pause()
+    if (playing === i.id) { setPlaying(null); return }
+    const audio = new Audio(voiceSample(i.id, i.voices[0].id))
+    audio.onended = () => setPlaying(null)
+    audio.play().catch(() => setPlaying(null))
+    audioRef.current = audio
+    setPlaying(i.id)
+  }
+  return (
+    <section className="relative z-10 px-6 pb-20 max-w-4xl mx-auto text-center">
+      <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white mb-2">Meet your interviewers</h2>
+      <p className="text-slate-500 dark:text-slate-400 text-sm mb-10">Pick who interviews you. They listen, ask follow-ups and speak out loud.</p>
+      <div className="flex flex-wrap justify-center gap-10 sm:gap-16">
+        {INTERVIEWERS.map(i => (
+          <div key={i.id} className="flex flex-col items-center max-w-[240px]">
+            <div className="relative">
+              <div className={`w-36 h-36 sm:w-44 sm:h-44 rounded-full overflow-hidden ring-4 transition-all duration-300 ${
+                playing === i.id ? 'ring-emerald-400 shadow-2xl shadow-emerald-500/40 scale-105' : 'ring-emerald-500/30 shadow-xl shadow-emerald-500/10'
+              }`} style={{ background: i.background }}>
+                <video src={playing === i.id ? i.talking : i.listening} poster={i.idle} autoPlay loop muted playsInline
+                  className="w-full h-full object-cover" />
+              </div>
+              <span className="absolute bottom-3 right-3 w-4 h-4 rounded-full bg-emerald-500 ring-4 ring-white dark:ring-slate-950" title="Online" />
+            </div>
+            <p className="mt-4 text-lg font-black text-slate-900 dark:text-white">{i.name}</p>
+            <p className="text-sm text-slate-600 dark:text-slate-400 mt-1 leading-relaxed min-h-[4.5rem]">{INTERVIEWER_BIOS[i.id]}</p>
+            <button
+              onClick={() => play(i)}
+              className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full border border-emerald-500/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+            >
+              <svg className="w-3 h-3" viewBox="0 0 12 12" fill="currentColor">
+                {playing === i.id ? <rect x="2" y="2" width="8" height="8" rx="1" /> : <path d="M3 1.5v9l7.5-4.5z" />}
+              </svg>
+              {playing === i.id ? 'Stop' : `Hear ${i.name}`}
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+export default function Homepage({ onLogin, onRegister, onTryFree }) {
+  const [trying, setTrying]     = useState(false)
+  const [tryError, setTryError] = useState('')
+  // One interview without an account
+  const tryFree = async () => {
+    setTrying(true); setTryError('')
+    try { await onTryFree() } catch (e) { setTryError(e.message || 'Could not start a trial right now'); setTrying(false) }
+  }
   const { theme, toggleTheme } = useTheme()
 
   return (
@@ -191,12 +252,19 @@ export default function Homepage({ onLogin, onRegister }) {
           Practice with an AI interviewer, get detailed feedback, and walk in with confidence.
         </p>
 
-        <div className="flex gap-3 animate-fade-up" style={{ animationDelay: '0.15s' }}>
+        <div className="flex flex-wrap justify-center gap-3 animate-fade-up" style={{ animationDelay: '0.15s' }}>
+          <button
+            onClick={tryFree}
+            disabled={trying}
+            className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-bold px-7 sm:px-9 py-3.5 rounded-2xl shadow-xl shadow-emerald-500/30 hover:scale-105 transition-all text-sm sm:text-base disabled:opacity-60"
+          >
+            {trying ? 'Starting…' : 'Try an interview — no sign-up →'}
+          </button>
           <button
             onClick={onRegister}
-            className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-bold px-7 sm:px-9 py-3.5 rounded-2xl shadow-xl shadow-emerald-500/30 hover:scale-105 transition-all text-sm sm:text-base"
+            className="glass border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 font-semibold px-7 sm:px-9 py-3.5 rounded-2xl hover:border-emerald-500/60 transition-all text-sm sm:text-base"
           >
-            Start Free →
+            Create free account
           </button>
           <button
             onClick={onLogin}
@@ -205,6 +273,7 @@ export default function Homepage({ onLogin, onRegister }) {
             Sign In
           </button>
         </div>
+        {tryError && <p className="text-red-500 text-sm mt-3">{tryError}</p>}
 
         {/* Stats bar */}
         <div
@@ -219,6 +288,9 @@ export default function Homepage({ onLogin, onRegister }) {
           ))}
         </div>
       </section>
+
+      {/* ── The interviewers ── */}
+      <Interviewers />
 
       {/* ── Feature cards ── */}
       <section className="relative z-10 px-6 pb-20 max-w-5xl mx-auto">
@@ -258,7 +330,7 @@ export default function Homepage({ onLogin, onRegister }) {
             <div>
               <p className="text-xs font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2">Free</p>
               <div className="flex items-baseline gap-1">
-                <span className="text-4xl font-black text-slate-900 dark:text-white">$0</span>
+                <span className="text-4xl font-black text-slate-900 dark:text-white">CHF 0</span>
                 <span className="text-slate-500 text-sm">/ forever</span>
               </div>
               <p className="text-slate-500 text-sm mt-1">No credit card required</p>
@@ -301,10 +373,10 @@ export default function Homepage({ onLogin, onRegister }) {
             <div>
               <p className="text-xs font-black uppercase tracking-widest text-amber-500 mb-2">Pro</p>
               <div className="flex items-baseline gap-1">
-                <span className="text-4xl font-black text-slate-900 dark:text-white">$9</span>
+                <span className="text-4xl font-black text-slate-900 dark:text-white">{PRO_PRICE}</span>
                 <span className="text-slate-500 text-sm">/ month</span>
               </div>
-              <p className="text-slate-500 text-sm mt-1">Cancel any time · No hidden fees</p>
+              <p className="text-slate-500 text-sm mt-1">30 interviews a month · Cancel any time</p>
             </div>
 
             <ul className="space-y-3">
@@ -323,9 +395,7 @@ export default function Homepage({ onLogin, onRegister }) {
               Start with Pro →
             </button>
 
-            <p className="text-center text-xs text-slate-500">
-              Secure checkout via <span className="font-semibold text-slate-400">Polar</span> · Powered by Stripe
-            </p>
+            <p className="text-center text-xs text-slate-500">Online payment is coming soon</p>
           </div>
 
         </div>

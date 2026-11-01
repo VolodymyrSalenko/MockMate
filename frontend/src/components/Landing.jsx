@@ -4,6 +4,44 @@ import { formatDate } from '../utils/scoring'
 import { getStoredToken } from '../context/AuthContext'
 import { IconMic } from '../utils/icons'
 import { INTERVIEWERS, DEFAULT_INTERVIEWER, getInterviewer } from '../utils/interviewers'
+import { openSignup, openUpgrade } from '../utils/plan'
+
+// How many interviews are left, and what to do when there are none
+function UsageNote({ usage }) {
+  if (!usage) return null
+  const { plan, remaining, limit, resets_at } = usage
+  const renews = resets_at ? new Date(resets_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null
+  if (plan === 'unverified') return (
+    <p className="text-center text-sm text-amber-600 dark:text-amber-400">Confirm your email address to start interviews: we sent you a link.</p>
+  )
+  if (remaining > 0) return (
+    <p className="text-center text-xs text-slate-500">
+      {plan === 'guest'
+        ? 'Your free trial interview · English, with your browser\'s voice'
+        : `${remaining} of ${limit} interviews left this month${renews ? ` · renews ${renews}` : ''}`}
+      {plan !== 'pro' && (
+        <> · <button onClick={plan === 'guest' ? openSignup : openUpgrade} className="font-semibold text-emerald-600 dark:text-emerald-400 hover:underline">
+          {plan === 'guest' ? 'Create a free account for 3 a month' : 'Pro: 30 a month'}
+        </button></>
+      )}
+    </p>
+  )
+  const next = plan === 'guest'
+    ? { text: 'You have used your trial interview. Create a free account to get 3 interviews every month.', label: 'Create free account', onClick: openSignup }
+    : plan === 'free'
+      ? { text: `You have used your 3 free interviews this month${renews ? ` (they renew ${renews})` : ''}. Pro gives you 30 a month.`, label: 'See Pro', onClick: openUpgrade }
+      : { text: `You have used your 30 interviews this month${renews ? `. They renew ${renews}` : ''}.`, label: null }
+  return (
+    <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+      <p className="text-sm text-amber-700 dark:text-amber-300">{next.text}</p>
+      {next.label && (
+        <button onClick={next.onClick} className="text-xs font-bold text-white bg-gradient-to-r from-emerald-500 to-teal-500 px-3 py-2 rounded-xl hover:scale-105 transition-all">
+          {next.label}
+        </button>
+      )}
+    </div>
+  )
+}
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
 
@@ -141,7 +179,7 @@ function pillCls(active) {
   }`
 }
 
-export default function Landing({ onStart, user, onUpgrade }) {
+export default function Landing({ onStart, user, onUpgrade, onLimit }) {
   const [jd,            setJd]            = useState('')
   const [jdInputMode,   setJdInputMode]   = useState(null)   // 'paste' | 'upload' | 'link' | null
   const [companyName,   setCompanyName]   = useState('')
@@ -316,7 +354,12 @@ export default function Landing({ onStart, user, onUpgrade }) {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getStoredToken()}` },
         body: JSON.stringify({ jd_text: jd, cv_text: cvText || null, difficulty, company_name: companyName.trim() || null, interview_type: interviewType, language, question_count: questionCount, interviewer }),
       })
-      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || 'Failed to parse JD') }
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        // A plan limit comes with a code; refresh what is left so the page explains it
+        if (d.detail?.code) { onLimit?.(); throw new Error(d.detail.message) }
+        throw new Error(d.detail || 'Failed to parse JD')
+      }
       onStart({ ...(await res.json()), difficulty, interview_type: interviewType, language, interviewer })
     } catch (err) {
       setError(err.message || 'Something went wrong.')
@@ -325,8 +368,9 @@ export default function Landing({ onStart, user, onUpgrade }) {
     }
   }
 
-  const isPro       = user?.plan === 'pro'
-  const canStart    = jd.trim() && !loading && !cvLoading && !jdLoading
+  const languages   = user?.usage?.features?.languages || ['en-US']
+  const outOfInterviews = user?.usage && user.usage.remaining <= 0
+  const canStart    = jd.trim() && !loading && !cvLoading && !jdLoading && !outOfInterviews
   // JD is "committed" (show badge) when it has content and no input mode is open
   const jdCommitted = Boolean(jd.trim() && jdInputMode === null)
 
@@ -373,11 +417,11 @@ export default function Landing({ onStart, user, onUpgrade }) {
         <label className="block text-slate-600 dark:text-slate-400 text-xs lg:text-[13px] font-semibold uppercase tracking-wide mb-1.5">Language</label>
         <div className="flex gap-1">
           {LANGUAGES.map(lang => {
-            const locked = !isPro && lang.code !== 'en-US'
+            const locked = !languages.includes(lang.code)
             return (
               <button
                 key={lang.code}
-                onClick={() => locked ? onUpgrade?.() : setLanguage(lang.code)}
+                onClick={() => locked ? openUpgrade() : setLanguage(lang.code)}
                 title={locked ? `${lang.label} — Pro only` : lang.label}
                 className={`${pillCls(language === lang.code && !locked)} relative`}
               >
@@ -683,23 +727,19 @@ export default function Landing({ onStart, user, onUpgrade }) {
                 <label className="block text-slate-600 dark:text-slate-400 text-xs lg:text-[13px] font-semibold uppercase tracking-wide mb-1.5">Interview Type</label>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
                   {INTERVIEW_TYPES.map(t => {
-                    const locked = !isPro && t.value === 'technical'
                     return (
                       <button
                         key={t.value}
-                        onClick={() => locked ? onUpgrade?.() : setInterviewType(t.value)}
-                        title={locked ? `${t.desc} — Pro only` : t.desc}
+                        onClick={() => setInterviewType(t.value)}
+                        title={t.desc}
                         className={`relative py-2 px-3 rounded-xl text-sm font-medium text-center transition-all ${
-                          interviewType === t.value && !locked
+                          interviewType === t.value
                             ? 'bg-emerald-500/15 border border-emerald-500/35 text-emerald-400'
                             : 'bg-slate-100/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/40 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600'
                         }`}
                       >
                         <span className="block font-semibold">{t.label}</span>
                         <span className="block text-[11px] font-normal opacity-75 mt-0.5 leading-snug">{t.desc}</span>
-                        {locked && (
-                          <span className="absolute -top-1.5 -right-1.5 text-[9px] font-black bg-amber-500 text-white rounded-full px-1 leading-tight">PRO</span>
-                        )}
                       </button>
                     )
                   })}
@@ -708,7 +748,9 @@ export default function Landing({ onStart, user, onUpgrade }) {
 
               <SettingsRow />
 
-              {error && <div className="bg-red-500/8 border border-red-500/20 rounded-xl px-3 py-2.5 text-red-400 text-sm">{error}</div>}
+              {error && !outOfInterviews && <div className="bg-red-500/8 border border-red-500/20 rounded-xl px-3 py-2.5 text-red-400 text-sm">{error}</div>}
+
+              <UsageNote usage={user?.usage} />
 
               <button
                 onClick={handleStart}

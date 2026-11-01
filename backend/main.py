@@ -35,6 +35,7 @@ from helpers import (
     extract_text_from_pdf,
     extract_text_from_docx,
 )
+from plans import check_new_interview, record_interview, require_feature, plan_of
 from database import init_db, upsert_user, save_session, get_sessions, get_session_detail, save_cv_profile, get_cv_profile, delete_session, add_answer_retry, get_connection, save_job_description, get_job_descriptions, delete_job_description, get_sessions_for_insights
 from billing import router as billing_router
 from admin import router as admin_router
@@ -393,6 +394,8 @@ async def parse_jd(req: ParseJDRequest, current_user: dict = Depends(get_current
         raise HTTPException(status_code=400, detail="jd_text is required")
 
     check_ai_consent(str(current_user["id"]))
+    # The plan decides how many interviews are left and in which languages
+    check_new_interview(current_user, req.language or "en-US")
 
     if req.cv_text and req.cv_text.strip():
         safe_cv = strip_contact_pii(req.cv_text.strip())
@@ -455,6 +458,8 @@ async def parse_jd(req: ParseJDRequest, current_user: dict = Depends(get_current
     cv_summary = None
     if req.cv_text and req.cv_text.strip():
         cv_summary = trim_to_words(strip_contact_pii(req.cv_text), 200)
+
+    record_interview(current_user)
 
     # Remember the job ad so it can be picked again; the interview goes ahead even if this fails
     try:
@@ -606,13 +611,7 @@ async def analyse_cv(current_user: dict = Depends(get_current_user)):
     user_id = str(current_user["id"])
     check_ai_consent(user_id)
 
-    # Check pro plan
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT plan FROM users WHERE id = %s", (user_id,))
-            row = cur.fetchone()
-    if not row or row[0] != "pro":
-        raise HTTPException(status_code=403, detail="Resume analysis requires a Pro plan")
+    require_feature(current_user, "cv_analysis")
 
     profile = get_cv_profile(user_id)
     if not profile or not profile.get("raw_text"):
@@ -729,6 +728,8 @@ def finalize_debrief(data: dict) -> dict:
 @app.post("/tts")
 @limiter.limit("20/minute")
 async def text_to_speech(request: Request, current_user: dict = Depends(get_current_user)):
+    # Natural voices cost per character; other plans use the browser's own voice
+    require_feature(current_user, "premium_voice")
     body = await request.json()
     text = (body.get("text") or "").strip()
     if not text:
@@ -905,8 +906,9 @@ class RetryIn(BaseModel):
 @app.post("/sessions/{session_id}/answers/{question_index}/retries", status_code=201)
 def save_retry(session_id: int, question_index: int, req: RetryIn, current_user: dict = Depends(get_current_user)):
     retry = {**req.model_dump(), "created_at": datetime.utcnow().isoformat()}
-    if not add_answer_retry(session_id, str(current_user["id"]), question_index, retry):
-        raise HTTPException(status_code=404, detail="Answer not found")
+    limit = plan_of(current_user)["retries_per_question"]
+    if not add_answer_retry(session_id, str(current_user["id"]), question_index, retry, max_retries=limit):
+        raise HTTPException(status_code=404, detail=f"Answer not found, or its {limit} retries are used")
     return {"saved": True}
 
 
@@ -920,6 +922,7 @@ def insights(request: Request, req: InsightsRequest, current_user: dict = Depend
     """An AI review of the interviews shown on the dashboard: progress, strengths, what to practise next."""
     user_id = str(current_user["id"])
     check_ai_consent(user_id)
+    require_feature(current_user, "coach")
     sessions = get_sessions_for_insights(user_id, req.session_ids)
     if not sessions:
         raise HTTPException(status_code=404, detail="No interviews found")

@@ -1,10 +1,12 @@
 import { useCallback, useRef } from 'react'
 import { BACKEND_URL } from '../utils/config'
-import { getStoredToken } from '../context/AuthContext'
+import { getStoredToken, useAuth } from '../context/AuthContext'
+import { hasFeature } from '../utils/plan'
 import { routeToRecording, keepLastLine } from '../utils/recordingMix'
 
-function browserSpeak(text, onEnd, onStart) {
+function browserSpeak(text, onEnd, onStart, language) {
   const utter = new SpeechSynthesisUtterance(text)
+  if (language) utter.lang = language
   utter.onstart = () => { if (onStart) onStart() }
   utter.rate = 1.0
   utter.pitch = 1.0
@@ -38,6 +40,12 @@ export function useTTS({ language = 'en-US', interviewer, voice } = {}) {
   // Interviewer + voice pick the ElevenLabs voice; a ref keeps the stable callbacks below up to date
   const voiceRef = useRef({ interviewer, voice })
   voiceRef.current = { interviewer, voice }
+  // Natural (ElevenLabs) voices are part of Pro; other plans hear the browser's voice
+  const { user } = useAuth()
+  const premiumRef = useRef(false)
+  premiumRef.current = hasFeature(user, 'premium_voice')
+  const langRef = useRef(language)
+  langRef.current = language
   const audioRef  = useRef(null)
   const genRef    = useRef(0)
   const cacheRef  = useRef(new Map()) // text -> blobUrl (ready)
@@ -55,7 +63,7 @@ export function useTTS({ language = 'en-US', interviewer, voice } = {}) {
 
   // Call as early as possible to warm up the audio before speak() is called
   const prefetch = useCallback((text) => {
-    if (!text?.trim()) return
+    if (!text?.trim() || !premiumRef.current) return
     if (cacheRef.current.has(text) || pendingRef.current.has(text)) return
 
     const p = ttsRequest(text, voiceRef.current.interviewer, voiceRef.current.voice)
@@ -87,6 +95,11 @@ export function useTTS({ language = 'en-US', interviewer, voice } = {}) {
 
     if (!text?.trim()) {
       if (onEnd) onEnd()
+      return
+    }
+
+    if (!premiumRef.current) {
+      browserSpeak(text, onEnd, onStart, langRef.current)
       return
     }
 
@@ -129,7 +142,7 @@ export function useTTS({ language = 'en-US', interviewer, voice } = {}) {
       pendingRef.current.get(text).then((url) => {
         if (genRef.current !== myGen) return
         if (url) playUrl(url)
-        else browserSpeak(text, onEnd, onStart)
+        else browserSpeak(text, onEnd, onStart, langRef.current)
       })
       return
     }
@@ -143,7 +156,7 @@ export function useTTS({ language = 'en-US', interviewer, voice } = {}) {
       .catch((err) => {
         console.error('[TTS] backend error, falling back to browser TTS:', err)
         if (genRef.current !== myGen) return
-        browserSpeak(text, onEnd, onStart)
+        browserSpeak(text, onEnd, onStart, langRef.current)
       })
   }, [])
 
