@@ -168,7 +168,7 @@ npm run dev
 Open **http://localhost:5173** in Chrome. Speech recognition needs Chrome or Edge.
 
 ### Making yourself an admin
-The admin panel lists users and switches plans (Free / Pro). The admin flag can only be set in the database:
+The admin panel lists users, switches plans (Free / Pro), deletes users and can make other users admins. The first admin has to be set in the database:
 
 ```sql
 UPDATE users SET is_admin = TRUE WHERE email = 'you@example.com';
@@ -216,26 +216,6 @@ Never commit `.env` files. Use `.env.template` as a reference.
    - Set `VITE_BACKEND_URL` to the backend's URL.
 
 Tables and migrations are created automatically when the backend starts.
-
----
-
-## Cost per interview
-
-Measured on a real 5-question interview:
-
-| Part | Model / service | Cost |
-|------|-----------------|------|
-| Questions and interviewer replies | Claude Haiku 5.5 | ~$0.002 |
-| Feedback | Claude Sonnet 5.5 | ~$0.03 |
-| Interviewer voice, ~1,000–1,300 characters (Pro) | ElevenLabs, $0.04 per 1,000 characters | ~$0.04–0.05 |
-| **Total** | | **~$0.03 (browser voice) · ~$0.08 (Pro)** |
-
-**Extras, when used:**
-- a retry: ~$0.012;
-- a coach's review: ~$0.014;
-- a resume analysis: ~$0.013.
-
-Speech recognition and face analysis run in the browser and cost nothing.
 
 ---
 
