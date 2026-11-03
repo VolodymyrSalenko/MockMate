@@ -244,3 +244,4 @@ Speech recognition and face analysis run in the browser and cost nothing.
 | romanandreyev-gif | [@romanandreyev-gif](https://github.com/romanandreyev-gif) |
 | VolodymyrSalenko | [@VolodymyrSalenko](https://github.com/VolodymyrSalenko) |
 | olha-mytrofanova | [@olha-mytrofanova](https://github.com/olha-mytrofanova) |
+| yasha-sharma | [@yasha-sharma](https://github.com/yasha-sharma) |
