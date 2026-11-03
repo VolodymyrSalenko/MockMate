@@ -429,7 +429,7 @@ export default function Interview({ sessionData, onComplete, onExit }) {
         body: JSON.stringify({
           history: newHistory,
           user_answer: transcript,
-          current_question_index: currentQuestionIndex,
+          current_question_index: idx,
           questions,
           question_plan,
           role,
