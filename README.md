@@ -9,26 +9,21 @@ Practise job interviews out loud with an AI interviewer who looks, listens and t
 ## How it works
 
 ```mermaid
-flowchart TD
-    A([Open MockMate]) --> B{Account?}
-    B -- No --> B1[Try 1 interview as a guest]
-    B -- Yes --> C[Setup page]
-    B1 --> C
-
-    C --> D[Job ad: paste, upload, link, template or a recent one]
-    D --> E[Optional CV · type · level · language · interviewer · 1-10 questions]
-    E --> F[POST /parse-jd — Claude Haiku 5.5 writes questions for this job and level]
-
-    F --> G[Video call with Alex or Emma — the question is spoken aloud]
-    G --> H[Hold to answer — the browser turns speech into text]
-    H --> I[POST /respond — Haiku decides: follow-up or next question]
-    I -- follow-up --> G
-    I -- next question --> G
-    I -- last answer --> J[Interviewer says goodbye while POST /debrief runs — Claude Sonnet 5.5]
-
-    J --> K[Feedback: scores, STAR, improved answers, speech and body language]
-    K --> L[Saved to Sessions · recording kept in the browser]
-    L --> M[Dashboard: progress, two skill radars, coach's review]
+flowchart TB
+    subgraph S1["1 · Set up"]
+        direction LR
+        A([Open MockMate]) --> B[Sign in, or try 1 interview as a guest] --> C["Job ad: paste, upload, link, template or recent"] --> D["Optional CV · type · level · language · interviewer"]
+    end
+    subgraph S2["2 · Interview"]
+        direction RL
+        E["Claude Haiku 5.5 writes questions for this job and level"] --> F[Alex or Emma asks aloud on a video call] --> G["You answer by voice, the browser turns it into text"] --> H{"Haiku: follow-up or next question?"}
+        H -- "not finished" --> F
+    end
+    subgraph S3["3 · Feedback"]
+        direction LR
+        I["Goodbye, while Claude Sonnet 5.5 writes the feedback"] --> J["Scores, STAR, improved answers, speech and body language"] --> K["Saved to Sessions, recording kept in the browser"] --> L[Dashboard: progress, skill radars, coach's review]
+    end
+    S1 --> S2 --> S3
 ```
 
 ---
