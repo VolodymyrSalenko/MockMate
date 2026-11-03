@@ -2,7 +2,15 @@
 
 Practise job interviews out loud with an AI interviewer who looks, listens and talks like a real one. Paste a job ad, answer by voice, and get feedback scored for your level: what you said, how you said it, and how you came across on camera.
 
-**Live demo:** https://mockmate-hk93.onrender.com — try one interview without signing up.
+**[Live demo](https://mockmate-hk93.onrender.com)** — try one interview without signing up · **[Presentation (PDF)](MockMate_AI%20Interview%20Coach.pdf)**
+
+> Use Chrome or Edge, because the app relies on their speech recognition. The demo runs on a free server, so the first action after a quiet period can take up to a minute while it wakes up.
+
+![Interview with Alex on a video call, with live captions and the full conversation](docs/screenshots/interview.jpg)
+
+| Set up | Feedback | Dashboard |
+|---|---|---|
+| ![Interview setup with a job ad, CV and interview type](docs/screenshots/setup.jpg) | ![Feedback with an overall score, a recruiter's verdict and speech analytics](docs/screenshots/feedback.jpg) | ![Dashboard with filters, totals and score progression](docs/screenshots/dashboard.jpg) |
 
 ---
 
